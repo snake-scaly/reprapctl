@@ -33,6 +33,7 @@ var _ fyne.WidgetRenderer = (*logCanvasRenderer)(nil)
 type logCanvasRenderer struct {
 	logView        *LogView
 	parentScroller *container.Scroll
+	wrappedLines   atomic.Value
 	itemCache      sync.Pool
 	visibleItems   map[int]*canvas.Text
 	itemLock       sync.RWMutex
@@ -47,16 +48,15 @@ func newLogCanvasRenderer(logView *LogView, parentScroller *container.Scroll) *l
 	}
 
 	r.itemCache.New = func() any {
-		return &canvas.Text{
-			TextSize:  theme.TextSize(),
-			Color:     theme.ForegroundColor(),
-			TextStyle: fyne.TextStyle{Monospace: true},
-		}
+		return &canvas.Text{Color: theme.ForegroundColor()}
 	}
 
 	parentScroller.OnScrolled = func(_ fyne.Position) {
 		r.Refresh()
 	}
+
+	r.wrappedLines.Store(make([]DisplayLine, 0))
+	r.objects.Store(make([]fyne.CanvasObject, 0))
 
 	return r
 }
@@ -69,29 +69,21 @@ func (r *logCanvasRenderer) Layout(_ fyne.Size) {
 
 func (r *logCanvasRenderer) MinSize() fyne.Size {
 	var minItemWidth float32
-	var itemHeight float32
-
 	func() {
 		r.itemLock.RLock()
 		defer r.itemLock.RUnlock()
 		for _, item := range r.visibleItems {
-			minSize := item.MinSize()
-			minItemWidth, itemHeight = max(minItemWidth, minSize.Width), minSize.Height
+			minItemWidth = max(minItemWidth, item.MinSize().Width)
 		}
 	}()
 
-	if itemHeight == 0 {
-		itemHeight = r.itemHeight()
-	}
-
-	var itemsCount int
-	r.logView.lines.Read(func(lines []string) {
-		itemsCount = len(lines)
-	})
+	itemHeight := r.itemHeight()
+	itemsCount := len(r.wrappedLines.Load().([]DisplayLine))
+	innerPadding := theme.InnerPadding()
 
 	return fyne.Size{
-		Width:  minItemWidth + theme.InnerPadding()*2,
-		Height: (itemHeight+theme.LineSpacing())*float32(itemsCount) + theme.InnerPadding()*2,
+		Width:  minItemWidth + innerPadding*2,
+		Height: (itemHeight+theme.LineSpacing())*float32(itemsCount) + innerPadding*2,
 	}
 }
 
@@ -100,36 +92,43 @@ func (r *logCanvasRenderer) Objects() []fyne.CanvasObject {
 }
 
 func (r *logCanvasRenderer) Refresh() {
-	lineHeight := r.itemHeight() + theme.LineSpacing()
-	topOffset := theme.InnerPadding()
+	r.rewrap()
 
-	top := int((r.parentScroller.Offset.Y - topOffset) / lineHeight)
-	bottom := int((r.parentScroller.Offset.Y + r.parentScroller.Size().Height - topOffset) / lineHeight)
+	lineHeight := r.itemHeight() + theme.LineSpacing()
+	innerPadding := theme.InnerPadding()
+	topOffset := innerPadding
+	lines := r.wrappedLines.Load().([]DisplayLine)
+
+	if len(lines) == 0 {
+		return
+	}
+
+	top := Clamp(int((r.parentScroller.Offset.Y-topOffset)/lineHeight), 0, len(lines)-1)
+	bottom := Clamp(int((r.parentScroller.Offset.Y+r.parentScroller.Size().Height-topOffset)/lineHeight), 0, len(lines)-1)
 
 	visible := make(map[int]*canvas.Text)
+	textSize := r.logView.TextSize
+	textStyle := r.logView.TextStyle
 
 	r.itemLock.Lock()
 	defer r.itemLock.Unlock()
 
-	r.logView.lines.Read(func(lines []string) {
-		top = Clamp(top, 0, len(lines)-1)
-		bottom = Clamp(bottom, 0, len(lines)-1)
-
-		// populate visible
-		for i := top; i <= bottom; i++ {
-			item, ok := r.visibleItems[i]
-			if !ok {
-				item = r.newItem()
-				item.Move(fyne.Position{
-					X: theme.InnerPadding(),
-					Y: theme.InnerPadding() + lineHeight*float32(i),
-				})
-			}
-			item.Text = lines[i]
-			item.Refresh()
-			visible[i] = item
+	// populate visible
+	for i := top; i <= bottom; i++ {
+		item, ok := r.visibleItems[i]
+		if !ok {
+			item = r.newItem()
+			item.Move(fyne.Position{
+				X: innerPadding,
+				Y: innerPadding + lineHeight*float32(i),
+			})
 		}
-	})
+		item.Text = lines[i].Text
+		item.TextSize = textSize
+		item.TextStyle = textStyle
+		item.Refresh()
+		visible[i] = item
+	}
 
 	// recycle invisible
 	for i, item := range r.visibleItems {
@@ -158,7 +157,27 @@ func (r *logCanvasRenderer) recycleItem(item *canvas.Text) {
 }
 
 func (r *logCanvasRenderer) itemHeight() float32 {
-	item := r.newItem()
-	defer r.recycleItem(item)
-	return item.MinSize().Height
+	return fyne.MeasureText("", r.logView.TextSize, r.logView.TextStyle).Height
+}
+
+func (r *logCanvasRenderer) rewrap() {
+	width := r.parentScroller.Size().Width - theme.InnerPadding()*2
+	if width <= 0 {
+		return
+	}
+
+	wrap := r.logView.Wrapping
+	textSize := r.logView.TextSize
+	textStyle := r.logView.TextStyle
+	var wrapped []DisplayLine
+
+	measure := func(s string) float32 {
+		return fyne.MeasureText(s, textSize, textStyle).Width
+	}
+
+	r.logView.lines.Read(func(lines []string) {
+		wrapped = WrapText(lines, width, wrap, measure)
+	})
+
+	r.wrappedLines.Store(wrapped)
 }

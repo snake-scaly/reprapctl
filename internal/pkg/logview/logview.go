@@ -13,11 +13,18 @@ var _ fyne.Widget = (*LogView)(nil)
 
 type LogView struct {
 	widget.BaseWidget
-	lines linelist.LineList
+	TextSize  float32
+	TextStyle fyne.TextStyle
+	Wrapping  fyne.TextWrap
+	lines     linelist.LineList
 }
 
 func New() *LogView {
-	lv := LogView{}
+	lv := LogView{
+		TextSize:  theme.TextSize(),
+		TextStyle: fyne.TextStyle{Monospace: true},
+		Wrapping:  fyne.TextWrapWord,
+	}
 	lv.ExtendBaseWidget(&lv)
 	return &lv
 }
