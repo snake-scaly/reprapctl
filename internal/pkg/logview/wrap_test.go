@@ -8,128 +8,207 @@ import (
 	"testing"
 )
 
-func TestWrapText(t *testing.T) {
+func TestWrapString(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
-
-	lines := []string{
-		"Lorem ipsum",
-		"многа букф",
-		"ライスヌードル",
-		"",
-	}
 
 	measure := func(s string) float32 {
 		return fyne.MeasureText(s, 10, fyne.TextStyle{}).Width
 	}
 
+	type line struct {
+		text   string
+		offset int
+	}
+
 	tests := []struct {
 		name  string
+		text  string
 		width float32
 		wrap  fyne.TextWrap
-		want  []logview.DisplayLine
+		want  []line
 	}{
 		{
-			name:  "NoWrap",
+			name:  "Latin_WrapOff",
+			text:  "Lorem ipsum",
 			width: 40,
 			wrap:  fyne.TextWrapOff,
-			want: []logview.DisplayLine{
-				{Text: "Lorem ipsum", SourceIndex: 0},
-				{Text: "многа букф", SourceIndex: 1},
-				{Text: "ライスヌードル", SourceIndex: 2},
-				{Text: "", SourceIndex: 3},
+			want: []line{
+				{text: "Lorem ipsum"},
 			},
 		},
 		{
-			name:  "BreakAfter40Points",
+			name:  "Latin_WrapBreak",
+			text:  "Lorem ipsum",
 			width: 40,
 			wrap:  fyne.TextWrapBreak,
-			want: []logview.DisplayLine{
-				{Text: "Lorem i", SourceIndex: 0},
-				{Text: "psum", SourceIndex: 0, SourceOffset: 7},
-				{Text: "многа б", SourceIndex: 1},
-				{Text: "укф", SourceIndex: 1, SourceOffset: 13},
-				{Text: "ライスヌー", SourceIndex: 2},
-				{Text: "ドル", SourceIndex: 2, SourceOffset: 15},
-				{Text: "", SourceIndex: 3},
+			want: []line{
+				{text: "Lorem i"},
+				{text: "psum", offset: 7},
 			},
 		},
 		{
-			name:  "WordWrapAfter40Points",
+			name:  "Latin_WrapWord",
+			text:  "Lorem ipsum",
 			width: 40,
 			wrap:  fyne.TextWrapWord,
-			want: []logview.DisplayLine{
-				{Text: "Lorem", SourceIndex: 0},
-				{Text: "ipsum", SourceIndex: 0, SourceOffset: 6},
-				{Text: "многа", SourceIndex: 1},
-				{Text: "букф", SourceIndex: 1, SourceOffset: 11},
-				{Text: "ライスヌー", SourceIndex: 2},
-				{Text: "ドル", SourceIndex: 2, SourceOffset: 15},
-				{Text: "", SourceIndex: 3},
+			want: []line{
+				{text: "Lorem"},
+				{text: "ipsum", offset: 6},
 			},
+		},
+		{
+			name:  "Russian_WrapOff",
+			text:  "многа букф",
+			width: 40,
+			wrap:  fyne.TextWrapOff,
+			want: []line{
+				{text: "многа букф"},
+			},
+		},
+		{
+			name:  "Russian_WrapBreak",
+			text:  "многа букф",
+			width: 40,
+			wrap:  fyne.TextWrapBreak,
+			want: []line{
+				{text: "многа б"},
+				{text: "укф", offset: 13},
+			},
+		},
+		{
+			name:  "Russian_WrapWord",
+			text:  "многа букф",
+			width: 40,
+			wrap:  fyne.TextWrapWord,
+			want: []line{
+				{text: "многа"},
+				{text: "букф", offset: 11},
+			},
+		},
+		{
+			name:  "Japanese_WrapOff",
+			text:  "ライスヌードル",
+			width: 40,
+			wrap:  fyne.TextWrapOff,
+			want: []line{
+				{text: "ライスヌードル"},
+			},
+		},
+		{
+			name:  "Japanese_WrapBreak",
+			text:  "ライスヌードル",
+			width: 40,
+			wrap:  fyne.TextWrapBreak,
+			want: []line{
+				{text: "ライスヌー"},
+				{text: "ドル", offset: 15},
+			},
+		},
+		{
+			name:  "Japanese_WrapWord",
+			text:  "ライスヌードル",
+			width: 40,
+			wrap:  fyne.TextWrapWord,
+			want: []line{
+				{text: "ライスヌー"},
+				{text: "ドル", offset: 15},
+			},
+		},
+		{
+			name:  "Emptpy_WrapOff",
+			text:  "",
+			width: 40,
+			wrap:  fyne.TextWrapOff,
+			want:  []line{{text: ""}},
+		},
+		{
+			name:  "Emptpy_WrapBreak",
+			text:  "",
+			width: 40,
+			wrap:  fyne.TextWrapBreak,
+			want:  []line{{text: ""}},
+		},
+		{
+			name:  "Emptpy_WrapWord",
+			text:  "",
+			width: 40,
+			wrap:  fyne.TextWrapWord,
+			want:  []line{{text: ""}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := logview.WrapText(lines, tt.width, tt.wrap, measure)
-			assert.Equal(t, tt.want, result)
+			var lines []line
+			logview.WrapString(tt.text, tt.width, tt.wrap, measure, func(s string, i int) {
+				lines = append(lines, line{text: s, offset: i})
+			})
+			assert.Equal(t, tt.want, lines)
 		})
 	}
 }
 
-func TestWrapText_WordWrapCornerCases(t *testing.T) {
+func TestWrapString_WordWrapCornerCases(t *testing.T) {
 	measure := func(s string) float32 {
 		return float32(len(s))
 	}
 
+	type line struct {
+		text   string
+		offset int
+	}
+
 	tests := []struct {
-		name  string
-		entry string
-		want  []logview.DisplayLine
+		name string
+		text string
+		want []line
 	}{
 		{
-			name:  "WordEndsOnBoundary",
-			entry: "01234 678",
-			want: []logview.DisplayLine{
-				{Text: "01234"},
-				{Text: "678", SourceOffset: 6},
+			name: "WordEndsOnBoundary",
+			text: "01234 678",
+			want: []line{
+				{text: "01234"},
+				{text: "678", offset: 6},
 			},
 		},
 		{
-			name:  "WhiteSpaceCrossesBoundary",
-			entry: "0123  678",
-			want: []logview.DisplayLine{
-				{Text: "0123"},
-				{Text: "678", SourceOffset: 6},
+			name: "WhiteSpaceCrossesBoundary",
+			text: "0123  678",
+			want: []line{
+				{text: "0123"},
+				{text: "678", offset: 6},
 			},
 		},
 		{
-			name:  "BreakAfterPunctuation",
-			entry: "012.45678",
-			want: []logview.DisplayLine{
-				{Text: "012."},
-				{Text: "45678", SourceOffset: 4},
+			name: "BreakAfterPunctuation",
+			text: "012.45678",
+			want: []line{
+				{text: "012."},
+				{text: "45678", offset: 4},
 			},
 		},
 		{
-			name:  "LineEndsOnBoundary",
-			entry: "01 34",
-			want: []logview.DisplayLine{
-				{Text: "01 34"},
+			name: "LineEndsOnBoundary",
+			text: "01 34",
+			want: []line{
+				{text: "01 34"},
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := logview.WrapText([]string{tt.entry}, 5, fyne.TextWrapWord, measure)
-			assert.Equal(t, tt.want, result)
+			var lines []line
+			logview.WrapString(tt.text, 5, fyne.TextWrapWord, measure, func(s string, i int) {
+				lines = append(lines, line{text: s, offset: i})
+			})
+			assert.Equal(t, tt.want, lines)
 		})
 	}
 }
 
-func TestWrapText_ForceWrapNewLine(t *testing.T) {
+func TestWrapString_ForceWrapNewLine(t *testing.T) {
 	measure := func(s string) float32 {
 		return float32(len(s))
 	}
@@ -152,17 +231,58 @@ func TestWrapText_ForceWrapNewLine(t *testing.T) {
 		},
 	}
 
-	want := []logview.DisplayLine{
-		{Text: "ab"},
-		{Text: "cd", SourceOffset: 3},
-		{Text: "ef", SourceOffset: 6},
-		{Text: "gh", SourceOffset: 10},
+	type line struct {
+		text   string
+		offset int
+	}
+
+	want := []line{
+		{text: "ab"},
+		{text: "cd", offset: 3},
+		{text: "ef", offset: 6},
+		{text: "gh", offset: 10},
+		{text: "", offset: 13},
+		{text: "", offset: 15},
+		{text: "", offset: 16},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := logview.WrapText([]string{"ab\ncd\ref\r\ngh"}, 100, tt.wrap, measure)
-			assert.Equal(t, want, result)
+			var lines []line
+			logview.WrapString("ab\ncd\ref\r\ngh\r\r\n\n\r", 5, fyne.TextWrapWord, measure, func(s string, i int) {
+				lines = append(lines, line{text: s, offset: i})
+			})
+			assert.Equal(t, want, lines)
 		})
 	}
+}
+
+func TestWrapText(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	lines := []string{
+		"Lorem ipsum",
+		"многа букф",
+		"ライスヌードル",
+		"",
+	}
+
+	measure := func(s string) float32 {
+		return fyne.MeasureText(s, 10, fyne.TextStyle{}).Width
+	}
+
+	result := logview.WrapDocument(lines, 40, fyne.TextWrapWord, measure)
+
+	want := []logview.DocumentFragment{
+		{Text: "Lorem", EntryIndex: 0},
+		{Text: "ipsum", EntryIndex: 0, EntryOffset: 6},
+		{Text: "многа", EntryIndex: 1},
+		{Text: "букф", EntryIndex: 1, EntryOffset: 11},
+		{Text: "ライスヌー", EntryIndex: 2},
+		{Text: "ドル", EntryIndex: 2, EntryOffset: 15},
+		{Text: "", EntryIndex: 3},
+	}
+
+	assert.Equal(t, want, result)
 }

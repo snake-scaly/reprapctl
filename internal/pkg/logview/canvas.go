@@ -55,7 +55,7 @@ func newLogCanvasRenderer(logView *LogView, parentScroller *container.Scroll) *l
 		r.Refresh()
 	}
 
-	r.wrappedLines.Store(make([]DisplayLine, 0))
+	r.wrappedLines.Store(make([]DocumentFragment, 0))
 	r.objects.Store(make([]fyne.CanvasObject, 0))
 
 	return r
@@ -78,7 +78,7 @@ func (r *logCanvasRenderer) MinSize() fyne.Size {
 	}()
 
 	itemHeight := r.itemHeight()
-	itemsCount := len(r.wrappedLines.Load().([]DisplayLine))
+	itemsCount := len(r.wrappedLines.Load().([]DocumentFragment))
 	innerPadding := theme.InnerPadding()
 
 	return fyne.Size{
@@ -97,7 +97,7 @@ func (r *logCanvasRenderer) Refresh() {
 	lineHeight := r.itemHeight() + theme.LineSpacing()
 	innerPadding := theme.InnerPadding()
 	topOffset := innerPadding
-	lines := r.wrappedLines.Load().([]DisplayLine)
+	lines := r.wrappedLines.Load().([]DocumentFragment)
 
 	if len(lines) == 0 {
 		return
@@ -169,14 +169,14 @@ func (r *logCanvasRenderer) rewrap() {
 	wrap := r.logView.Wrapping
 	textSize := r.logView.TextSize
 	textStyle := r.logView.TextStyle
-	var wrapped []DisplayLine
+	var wrapped []DocumentFragment
 
 	measure := func(s string) float32 {
 		return fyne.MeasureText(s, textSize, textStyle).Width
 	}
 
 	r.logView.lines.Read(func(lines []string) {
-		wrapped = WrapText(lines, width, wrap, measure)
+		wrapped = WrapDocument(lines, width, wrap, measure)
 	})
 
 	r.wrappedLines.Store(wrapped)
