@@ -11,14 +11,17 @@ import (
 )
 
 var _ fyne.Widget = (*LogView)(nil)
+var _ fyne.Focusable = (*LogView)(nil)
+var _ fyne.Shortcutable = (*LogView)(nil)
 
 type LogView struct {
 	widget.BaseWidget
-	textSize     float32
-	textStyle    fyne.TextStyle
-	wrapping     fyne.TextWrap
-	lines        linelist.LineList
-	propertyLock sync.RWMutex
+	textSize        float32
+	textStyle       fyne.TextStyle
+	wrapping        fyne.TextWrap
+	lines           linelist.LineList
+	propertyLock    sync.RWMutex
+	shortcutHandler fyne.ShortcutHandler
 }
 
 func New() *LogView {
@@ -28,11 +31,39 @@ func New() *LogView {
 		wrapping:  fyne.TextWrapWord,
 	}
 	lv.ExtendBaseWidget(&lv)
+
+	lv.shortcutHandler.AddShortcut(&fyne.ShortcutCut{}, func(shortcut fyne.Shortcut) {
+		shortcut.(*fyne.ShortcutCut).Clipboard.SetContent(lv.lines.SelectionToString())
+	})
+	lv.shortcutHandler.AddShortcut(&fyne.ShortcutCopy{}, func(shortcut fyne.Shortcut) {
+		shortcut.(*fyne.ShortcutCopy).Clipboard.SetContent(lv.lines.SelectionToString())
+	})
+	lv.shortcutHandler.AddShortcut(&fyne.ShortcutSelectAll{}, func(_ fyne.Shortcut) {
+		lv.lines.SelectAll()
+		lv.Refresh()
+	})
+
 	return &lv
 }
 
 func (l *LogView) CreateRenderer() fyne.WidgetRenderer {
 	return newViewRenderer(l)
+}
+
+func (l *LogView) FocusGained() {
+}
+
+func (l *LogView) FocusLost() {
+}
+
+func (l *LogView) TypedRune(_ rune) {
+}
+
+func (l *LogView) TypedKey(_ *fyne.KeyEvent) {
+}
+
+func (l *LogView) TypedShortcut(shortcut fyne.Shortcut) {
+	l.shortcutHandler.TypedShortcut(shortcut)
 }
 
 func (l *LogView) TextSize() float32 {
@@ -73,6 +104,35 @@ func (l *LogView) SetWrapping(wrapping fyne.TextWrap) {
 
 func (l *LogView) AddLine(line string) {
 	l.lines.Add(line)
+}
+
+func (l *LogView) requestFocus() {
+	if c := fyne.CurrentApp().Driver().CanvasForObject(l); c != nil {
+		c.Focus(l)
+	}
+}
+
+func (l *LogView) showContextMenu(absolutePos fyne.Position) {
+	driver := fyne.CurrentApp().Driver()
+	cb := driver.AllWindows()[0].Clipboard()
+
+	copyItem := fyne.NewMenuItem("Copy", func() {
+		l.shortcutHandler.TypedShortcut(&fyne.ShortcutCopy{Clipboard: cb})
+	})
+	copyItem.Shortcut = &fyne.ShortcutCopy{}
+	selectAllItem := fyne.NewMenuItem("Select all", func() {
+		l.shortcutHandler.TypedShortcut(&fyne.ShortcutSelectAll{})
+	})
+	selectAllItem.Shortcut = &fyne.ShortcutSelectAll{}
+
+	selStart, selEnd := l.lines.Selection()
+	copyItem.Disabled = selStart.Compare(selEnd) == 0
+
+	menu := fyne.NewMenu("", copyItem, selectAllItem)
+
+	cv := driver.CanvasForObject(l)
+	popup := widget.NewPopUpMenu(menu, cv)
+	popup.ShowAtPosition(absolutePos)
 }
 
 var _ fyne.WidgetRenderer = (*viewRenderer)(nil)

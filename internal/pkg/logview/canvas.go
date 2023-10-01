@@ -18,7 +18,9 @@ import (
 var _ fyne.Widget = (*logCanvas)(nil)
 var _ fyne.Draggable = (*logCanvas)(nil)
 var _ fyne.Tappable = (*logCanvas)(nil)
+var _ fyne.SecondaryTappable = (*logCanvas)(nil)
 var _ desktop.Cursorable = (*logCanvas)(nil)
+var _ desktop.Mouseable = (*logCanvas)(nil)
 
 type logCanvas struct {
 	widget.BaseWidget
@@ -54,6 +56,7 @@ func (c *logCanvas) Dragged(e *fyne.DragEvent) {
 			c.parentScroller.Refresh()
 		}
 	} else {
+		c.logView.requestFocus()
 		c.logView.lines.StartSelection(a)
 		c.selecting.Store(true)
 	}
@@ -65,12 +68,24 @@ func (c *logCanvas) DragEnd() {
 }
 
 func (c *logCanvas) Tapped(_ *fyne.PointEvent) {
-	c.logView.lines.StartSelection(doc.Anchor{})
+	c.logView.requestFocus()
+	c.logView.lines.SelectNone()
 	c.Refresh()
+}
+
+func (c *logCanvas) TappedSecondary(e *fyne.PointEvent) {
+	c.logView.showContextMenu(e.AbsolutePosition)
 }
 
 func (c *logCanvas) Cursor() desktop.Cursor {
 	return desktop.TextCursor
+}
+
+func (c *logCanvas) MouseDown(_ *desktop.MouseEvent) {
+	c.logView.requestFocus()
+}
+
+func (c *logCanvas) MouseUp(_ *desktop.MouseEvent) {
 }
 
 func (c *logCanvas) getAnchorAtPoint(p fyne.Position) doc.Anchor {
@@ -268,9 +283,6 @@ func (r *logCanvasRenderer) Refresh() {
 	r.visibleSelections = make([]*canvas.Rectangle, 0, len(r.visibleItems))
 
 	selStart, selEnd := r.logView.lines.Selection()
-	if selStart.Compare(selEnd) > 0 {
-		selStart, selEnd = selEnd, selStart
-	}
 
 	for _, item := range r.visibleItems {
 		itemStart, itemEnd := item.Anchor, item.Anchor
