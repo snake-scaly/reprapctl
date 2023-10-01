@@ -108,24 +108,7 @@ func (r *logCanvasRenderer) Objects() []fyne.CanvasObject {
 }
 
 func (r *logCanvasRenderer) Refresh() {
-	var lines []DocumentFragment
-
-	if wrapped, context, ok := r.rewrap(); ok {
-		func() {
-			r.wrapLock.Lock()
-			defer r.wrapLock.Unlock()
-			r.wrappedLines = wrapped
-			r.wrapContext = context
-		}()
-		lines = wrapped
-	} else {
-		func() {
-			r.wrapLock.RLock()
-			defer r.wrapLock.RUnlock()
-			lines = r.wrappedLines
-		}()
-	}
-
+	lines := r.rewrap()
 	visible := make(map[int]*canvas.Text)
 
 	r.itemsLock.Lock()
@@ -190,10 +173,16 @@ func (r *logCanvasRenderer) itemHeight() float32 {
 	return fyne.MeasureText("", r.logView.TextSize(), r.logView.TextStyle()).Height
 }
 
-func (r *logCanvasRenderer) rewrap() ([]DocumentFragment, wrapContext, bool) {
+func (r *logCanvasRenderer) rewrap() []DocumentFragment {
 	width := r.parentScroller.Size().Width - theme.InnerPadding()*2
+
+	r.wrapLock.RLock()
+	lastWrapped := r.wrappedLines
+	lastContext := r.wrapContext
+	r.wrapLock.RUnlock()
+
 	if width <= 0 {
-		return nil, wrapContext{}, false
+		return lastWrapped
 	}
 
 	context := wrapContext{
@@ -205,11 +194,8 @@ func (r *logCanvasRenderer) rewrap() ([]DocumentFragment, wrapContext, bool) {
 	}
 
 	// no need to rewrap if context didn't change
-	r.wrapLock.RLock()
-	lastContext := r.wrapContext
-	r.wrapLock.RUnlock()
 	if context == lastContext {
-		return nil, wrapContext{}, false
+		return lastWrapped
 	}
 
 	measure := func(s string) float32 {
@@ -221,5 +207,12 @@ func (r *logCanvasRenderer) rewrap() ([]DocumentFragment, wrapContext, bool) {
 		wrapped = WrapDocument(lines, context.width, context.wrap, measure)
 	})
 
-	return wrapped, context, true
+	func() {
+		r.wrapLock.Lock()
+		defer r.wrapLock.Unlock()
+		r.wrappedLines = wrapped
+		r.wrapContext = context
+	}()
+
+	return wrapped
 }
