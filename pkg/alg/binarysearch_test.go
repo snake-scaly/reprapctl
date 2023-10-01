@@ -1,8 +1,8 @@
-package logview_test
+package alg_test
 
 import (
 	"github.com/stretchr/testify/assert"
-	"reprapctl/internal/pkg/logview"
+	"reprapctl/pkg/alg"
 	"testing"
 )
 
@@ -53,7 +53,7 @@ func TestBinarySearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			i, m := logview.BinarySearch(tt.size, tt.target, func(i int) float64 { return float64(i)/10 + 1.1 })
+			i, m := alg.BinarySearch(tt.size, tt.target, func(i int) float64 { return float64(i)/10 + 1.1 })
 			assert.Equal(t, tt.wantIndex, i)
 			assert.Equal(t, tt.wantMetric, m)
 		})

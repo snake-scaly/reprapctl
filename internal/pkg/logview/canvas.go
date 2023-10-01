@@ -6,6 +6,8 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"reprapctl/internal/pkg/doc"
+	"reprapctl/pkg/alg"
 	"sync"
 	"sync/atomic"
 )
@@ -34,7 +36,7 @@ type logCanvasRenderer struct {
 	logView        *LogView
 	parentScroller *container.Scroll
 
-	wrappedLines []DocumentFragment
+	wrappedLines []doc.DocumentFragment
 	wrapContext  wrapContext
 	wrapLock     sync.RWMutex
 
@@ -119,8 +121,8 @@ func (r *logCanvasRenderer) Refresh() {
 		innerPadding := theme.InnerPadding()
 		topOffset := innerPadding
 
-		top := Clamp(int((r.parentScroller.Offset.Y-topOffset)/lineHeight), 0, len(lines)-1)
-		bottom := Clamp(int((r.parentScroller.Offset.Y+r.parentScroller.Size().Height-topOffset)/lineHeight), 0, len(lines)-1)
+		top := alg.Clamp(int((r.parentScroller.Offset.Y-topOffset)/lineHeight), 0, len(lines)-1)
+		bottom := alg.Clamp(int((r.parentScroller.Offset.Y+r.parentScroller.Size().Height-topOffset)/lineHeight), 0, len(lines)-1)
 
 		textSize := r.logView.TextSize()
 		textStyle := r.logView.TextStyle()
@@ -173,7 +175,7 @@ func (r *logCanvasRenderer) itemHeight() float32 {
 	return fyne.MeasureText("", r.logView.TextSize(), r.logView.TextStyle()).Height
 }
 
-func (r *logCanvasRenderer) rewrap() []DocumentFragment {
+func (r *logCanvasRenderer) rewrap() []doc.DocumentFragment {
 	width := r.parentScroller.Size().Width - theme.InnerPadding()*2
 
 	r.wrapLock.RLock()
@@ -202,9 +204,9 @@ func (r *logCanvasRenderer) rewrap() []DocumentFragment {
 		return fyne.MeasureText(s, context.textSize, context.textStyle).Width
 	}
 
-	var wrapped []DocumentFragment
+	var wrapped []doc.DocumentFragment
 	r.logView.lines.Read(func(lines []string) {
-		wrapped = WrapDocument(lines, context.width, context.wrap, measure)
+		wrapped = doc.WrapDocument(lines, context.width, context.wrap, measure)
 	})
 
 	func() {

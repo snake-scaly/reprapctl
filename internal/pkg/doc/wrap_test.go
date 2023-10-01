@@ -1,10 +1,10 @@
-package logview_test
+package doc_test
 
 import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"github.com/stretchr/testify/assert"
-	"reprapctl/internal/pkg/logview"
+	"reprapctl/internal/pkg/doc"
 	"testing"
 )
 
@@ -141,7 +141,7 @@ func TestWrapString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var lines []line
-			logview.WrapString(tt.text, tt.width, tt.wrap, measure, func(s string, i int) {
+			doc.WrapString(tt.text, tt.width, tt.wrap, measure, func(s string, i int) {
 				lines = append(lines, line{text: s, offset: i})
 			})
 			assert.Equal(t, tt.want, lines)
@@ -200,7 +200,7 @@ func TestWrapString_WordWrapCornerCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var lines []line
-			logview.WrapString(tt.text, 5, fyne.TextWrapWord, measure, func(s string, i int) {
+			doc.WrapString(tt.text, 5, fyne.TextWrapWord, measure, func(s string, i int) {
 				lines = append(lines, line{text: s, offset: i})
 			})
 			assert.Equal(t, tt.want, lines)
@@ -249,7 +249,7 @@ func TestWrapString_ForceWrapNewLine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var lines []line
-			logview.WrapString("ab\ncd\ref\r\ngh\r\r\n\n\r", 5, fyne.TextWrapWord, measure, func(s string, i int) {
+			doc.WrapString("ab\ncd\ref\r\ngh\r\r\n\n\r", 5, fyne.TextWrapWord, measure, func(s string, i int) {
 				lines = append(lines, line{text: s, offset: i})
 			})
 			assert.Equal(t, want, lines)
@@ -272,16 +272,16 @@ func TestWrapText(t *testing.T) {
 		return fyne.MeasureText(s, 10, fyne.TextStyle{}).Width
 	}
 
-	result := logview.WrapDocument(lines, 40, fyne.TextWrapWord, measure)
+	result := doc.WrapDocument(lines, 40, fyne.TextWrapWord, measure)
 
-	want := []logview.DocumentFragment{
-		{Text: "Lorem", EntryIndex: 0},
-		{Text: "ipsum", EntryIndex: 0, EntryOffset: 6},
-		{Text: "многа", EntryIndex: 1},
-		{Text: "букф", EntryIndex: 1, EntryOffset: 11},
-		{Text: "ライスヌー", EntryIndex: 2},
-		{Text: "ドル", EntryIndex: 2, EntryOffset: 15},
-		{Text: "", EntryIndex: 3},
+	want := []doc.DocumentFragment{
+		{Text: "Lorem", Anchor: doc.Anchor{LineIndex: 0}},
+		{Text: "ipsum", Anchor: doc.Anchor{LineIndex: 0, LineOffset: 6}},
+		{Text: "многа", Anchor: doc.Anchor{LineIndex: 1}},
+		{Text: "букф", Anchor: doc.Anchor{LineIndex: 1, LineOffset: 11}},
+		{Text: "ライスヌー", Anchor: doc.Anchor{LineIndex: 2}},
+		{Text: "ドル", Anchor: doc.Anchor{LineIndex: 2, LineOffset: 15}},
+		{Text: "", Anchor: doc.Anchor{LineIndex: 3}},
 	}
 
 	assert.Equal(t, want, result)

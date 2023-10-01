@@ -1,16 +1,11 @@
-package logview
+package doc
 
 import (
 	"fyne.io/fyne/v2"
+	"reprapctl/pkg/alg"
 	"unicode"
 	"unicode/utf8"
 )
-
-type DocumentFragment struct {
-	Text        string
-	EntryIndex  int
-	EntryOffset int
-}
 
 // WrapString breaks a string into lines that fit the specified width according
 // to the measure function and wrapping style. Three wrapping styles are supported:
@@ -59,7 +54,7 @@ func WrapString(
 		}
 
 		for len(runeOffsets) > 1 {
-			end, _ := BinarySearch(len(runeOffsets)-1, width, metric)
+			end, _ := alg.BinarySearch(len(runeOffsets)-1, width, metric)
 			next := end
 			if wrap == fyne.TextWrapWord {
 				end, next = trimPartialWord(end, len(runeOffsets)-1, func(i int) rune {
@@ -74,19 +69,18 @@ func WrapString(
 }
 
 func WrapDocument(
-	document []string,
+	lines []string,
 	width float32,
 	wrap fyne.TextWrap,
 	measure func(string) float32) []DocumentFragment {
 
-	display := make([]DocumentFragment, 0, len(document))
+	display := make([]DocumentFragment, 0, len(lines))
 
-	for i, e := range document {
+	for i, e := range lines {
 		WrapString(e, width, wrap, measure, func(line string, offset int) {
 			display = append(display, DocumentFragment{
-				Text:        line,
-				EntryIndex:  i,
-				EntryOffset: offset,
+				Text:   line,
+				Anchor: Anchor{LineIndex: i, LineOffset: offset},
 			})
 		})
 	}

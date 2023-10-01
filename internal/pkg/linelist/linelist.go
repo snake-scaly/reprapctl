@@ -1,11 +1,16 @@
 package linelist
 
-import "sync"
+import (
+	"reprapctl/internal/pkg/doc"
+	"sync"
+)
 
 type LineList struct {
-	lines   []string
-	version uint64
-	lock    sync.RWMutex
+	lines          []string
+	version        uint64
+	selectionStart doc.Anchor
+	selectionEnd   doc.Anchor
+	lock           sync.RWMutex
 }
 
 // WithReadLock allows to perform a read-only action on the list of lines.
@@ -31,4 +36,25 @@ func (l *LineList) Version() uint64 {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 	return l.version
+}
+
+func (l *LineList) Selection() (start, end doc.Anchor) {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	start = l.selectionStart
+	end = l.selectionEnd
+	return
+}
+
+func (l *LineList) StartSelection(a doc.Anchor) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	l.selectionStart = a
+	l.selectionEnd = a
+}
+
+func (l *LineList) EndSelection(a doc.Anchor) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	l.selectionEnd = a
 }
