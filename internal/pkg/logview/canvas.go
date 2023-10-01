@@ -139,8 +139,8 @@ func (r *logCanvasRenderer) Refresh() {
 		top := Clamp(int((r.parentScroller.Offset.Y-topOffset)/lineHeight), 0, len(lines)-1)
 		bottom := Clamp(int((r.parentScroller.Offset.Y+r.parentScroller.Size().Height-topOffset)/lineHeight), 0, len(lines)-1)
 
-		textSize := r.logView.TextSize
-		textStyle := r.logView.TextStyle
+		textSize := r.logView.TextSize()
+		textStyle := r.logView.TextStyle()
 
 		// populate visible
 		for i := top; i <= bottom; i++ {
@@ -187,7 +187,7 @@ func (r *logCanvasRenderer) recycleItem(item *canvas.Text) {
 }
 
 func (r *logCanvasRenderer) itemHeight() float32 {
-	return fyne.MeasureText("", r.logView.TextSize, r.logView.TextStyle).Height
+	return fyne.MeasureText("", r.logView.TextSize(), r.logView.TextStyle()).Height
 }
 
 func (r *logCanvasRenderer) rewrap() ([]DocumentFragment, wrapContext, bool) {
@@ -199,9 +199,9 @@ func (r *logCanvasRenderer) rewrap() ([]DocumentFragment, wrapContext, bool) {
 	context := wrapContext{
 		documentVersion: r.logView.lines.Version(),
 		width:           width,
-		wrap:            r.logView.Wrapping,
-		textSize:        r.logView.TextSize,
-		textStyle:       r.logView.TextStyle,
+		wrap:            r.logView.Wrapping(),
+		textSize:        r.logView.TextSize(),
+		textStyle:       r.logView.TextStyle(),
 	}
 
 	// no need to rewrap if context didn't change

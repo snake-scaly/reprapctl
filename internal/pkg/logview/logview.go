@@ -7,23 +7,25 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"reprapctl/internal/pkg/logview/internal/linelist"
+	"sync"
 )
 
 var _ fyne.Widget = (*LogView)(nil)
 
 type LogView struct {
 	widget.BaseWidget
-	TextSize  float32
-	TextStyle fyne.TextStyle
-	Wrapping  fyne.TextWrap
-	lines     linelist.LineList
+	textSize     float32
+	textStyle    fyne.TextStyle
+	wrapping     fyne.TextWrap
+	lines        linelist.LineList
+	propertyLock sync.RWMutex
 }
 
 func New() *LogView {
 	lv := LogView{
-		TextSize:  theme.TextSize(),
-		TextStyle: fyne.TextStyle{Monospace: true},
-		Wrapping:  fyne.TextWrapWord,
+		textSize:  theme.TextSize(),
+		textStyle: fyne.TextStyle{Monospace: true},
+		wrapping:  fyne.TextWrapWord,
 	}
 	lv.ExtendBaseWidget(&lv)
 	return &lv
@@ -33,9 +35,44 @@ func (l *LogView) CreateRenderer() fyne.WidgetRenderer {
 	return newViewRenderer(l)
 }
 
+func (l *LogView) TextSize() float32 {
+	l.propertyLock.RLock()
+	defer l.propertyLock.RUnlock()
+	return l.textSize
+}
+
+func (l *LogView) SetTextSize(s float32) {
+	l.propertyLock.Lock()
+	defer l.propertyLock.Unlock()
+	l.textSize = s
+}
+
+func (l *LogView) TextStyle() fyne.TextStyle {
+	l.propertyLock.RLock()
+	defer l.propertyLock.RUnlock()
+	return l.textStyle
+}
+
+func (l *LogView) SetTextStyle(textStyle fyne.TextStyle) {
+	l.propertyLock.Lock()
+	defer l.propertyLock.Unlock()
+	l.textStyle = textStyle
+}
+
+func (l *LogView) Wrapping() fyne.TextWrap {
+	l.propertyLock.RLock()
+	defer l.propertyLock.RUnlock()
+	return l.wrapping
+}
+
+func (l *LogView) SetWrapping(wrapping fyne.TextWrap) {
+	l.propertyLock.Lock()
+	defer l.propertyLock.Unlock()
+	l.wrapping = wrapping
+}
+
 func (l *LogView) AddLine(line string) {
 	l.lines.Add(line)
-	l.Refresh()
 }
 
 var _ fyne.WidgetRenderer = (*viewRenderer)(nil)
