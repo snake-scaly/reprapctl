@@ -64,6 +64,7 @@ func (c *logCanvas) Tapped(_ *fyne.PointEvent) {
 }
 
 func (c *logCanvas) TappedSecondary(e *fyne.PointEvent) {
+	c.logView.requestFocus()
 	c.logView.showContextMenu(e.AbsolutePosition)
 }
 
