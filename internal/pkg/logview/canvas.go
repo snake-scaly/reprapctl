@@ -214,12 +214,20 @@ func (r *logCanvasRenderer) Objects() []fyne.CanvasObject {
 
 func (r *logCanvasRenderer) Refresh() {
 	lines := r.rewrap()
-	visible := make(map[int]*logCanvasItem)
 	lineSpacing := theme.LineSpacing()
 	lineHeight := r.itemHeight() + lineSpacing
 
 	r.itemsLock.Lock()
 	defer r.itemsLock.Unlock()
+
+	r.renderItems(lines, lineHeight)
+	r.renderSelection(lineHeight)
+	r.cacheObjects()
+}
+
+// renderItems assumes a write lock on r.itemsLock.
+func (r *logCanvasRenderer) renderItems(lines []doc.DocumentFragment, lineHeight float32) {
+	visible := make(map[int]*logCanvasItem)
 
 	if len(lines) > 0 {
 		innerPadding := theme.InnerPadding()
@@ -251,22 +259,20 @@ func (r *logCanvasRenderer) Refresh() {
 		}
 	}
 
-	// recycle invisible
+	// recycle unused items
 	for i, item := range r.visibleItems {
 		if _, ok := visible[i]; !ok {
 			r.recycleItem(item)
 		}
 	}
 
-	// replace the visible map
 	r.visibleItems = visible
+}
 
-	// selection
-	for _, s := range r.visibleSelections {
-		r.rectCache.Put(s)
-	}
-	r.visibleSelections = make([]*canvas.Rectangle, 0, len(r.visibleItems))
-
+// renderSelection assumes a write lock on r.itemsLock.
+func (r *logCanvasRenderer) renderSelection(lineHeight float32) {
+	oldSelections := r.visibleSelections
+	selections := make([]*canvas.Rectangle, 0, len(r.visibleItems))
 	selStart, selEnd := r.logView.lines.Selection()
 
 	for _, item := range r.visibleItems {
@@ -278,7 +284,6 @@ func (r *logCanvasRenderer) Refresh() {
 		}
 
 		itemPos, itemWidth := item.Position(), item.MinSize().Width
-		rect := r.rectCache.Get().(*canvas.Rectangle)
 		var x1, x2 float32
 
 		switch {
@@ -293,12 +298,28 @@ func (r *logCanvasRenderer) Refresh() {
 			x1, x2 = itemPos.X, itemPos.X+itemWidth
 		}
 
+		var rect *canvas.Rectangle
+		if len(oldSelections) != 0 {
+			last := len(oldSelections) - 1
+			rect, oldSelections = oldSelections[last], oldSelections[:last]
+		} else {
+			rect = r.rectCache.Get().(*canvas.Rectangle)
+		}
+
 		rect.Move(fyne.Position{X: x1, Y: itemPos.Y})
 		rect.Resize(fyne.Size{Width: x2 - x1, Height: lineHeight})
-		r.visibleSelections = append(r.visibleSelections, rect)
+		selections = append(selections, rect)
 	}
 
-	// prepare object list
+	// recycle unused rects
+	for _, o := range oldSelections {
+		r.rectCache.Put(o)
+	}
+
+	r.visibleSelections = selections
+}
+
+func (r *logCanvasRenderer) cacheObjects() {
 	objects := make([]fyne.CanvasObject, 0, len(r.visibleItems))
 	for _, rect := range r.visibleSelections {
 		objects = append(objects, rect)
