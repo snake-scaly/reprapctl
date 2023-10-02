@@ -4,6 +4,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"reprapctl/internal/pkg/linelist"
@@ -14,6 +15,7 @@ import (
 var shortcutCut = &fyne.ShortcutCut{}
 var shortcutCopy = &fyne.ShortcutCopy{}
 var shortcutSelectAll = &fyne.ShortcutSelectAll{}
+var shortcutWordWrap = &desktop.CustomShortcut{KeyName: fyne.KeyW, Modifier: fyne.KeyModifierShortcutDefault}
 
 var _ fyne.Widget = (*LogView)(nil)
 var _ fyne.Focusable = (*LogView)(nil)
@@ -61,6 +63,14 @@ func New() *LogView {
 	})
 	l.shortcutHandler.AddShortcut(shortcutSelectAll, func(_ fyne.Shortcut) {
 		l.lines.SelectAll()
+		l.Refresh()
+	})
+	l.shortcutHandler.AddShortcut(shortcutWordWrap, func(_ fyne.Shortcut) {
+		if l.Wrapping() == fyne.TextWrapWord {
+			l.SetWrapping(fyne.TextWrapOff)
+		} else {
+			l.SetWrapping(fyne.TextWrapWord)
+		}
 		l.Refresh()
 	})
 
@@ -160,11 +170,19 @@ func (l *LogView) showContextMenu(absolutePos fyne.Position) {
 			l.shortcutHandler.TypedShortcut(shortcutSelectAll)
 		},
 	}
+	wordWrapItem := &fyne.MenuItem{
+		Label:    "Word wrap",
+		Shortcut: shortcutWordWrap,
+		Checked:  l.Wrapping() == fyne.TextWrapWord,
+		Action: func() {
+			l.shortcutHandler.TypedShortcut(shortcutWordWrap)
+		},
+	}
 
 	selStart, selEnd := l.lines.Selection()
 	copyItem.Disabled = selStart.Compare(selEnd) == 0
 
-	menu := fyne.NewMenu("", copyItem, selectAllItem)
+	menu := fyne.NewMenu("", copyItem, selectAllItem, wordWrapItem)
 
 	cv := driver.CanvasForObject(l)
 	popup := widget.NewPopUpMenu(menu, cv)
