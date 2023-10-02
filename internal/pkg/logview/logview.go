@@ -7,8 +7,13 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"reprapctl/internal/pkg/linelist"
+	"reprapctl/pkg/alg"
 	"sync"
 )
+
+var shortcutCut = &fyne.ShortcutCut{}
+var shortcutCopy = &fyne.ShortcutCopy{}
+var shortcutSelectAll = &fyne.ShortcutSelectAll{}
 
 var _ fyne.Widget = (*LogView)(nil)
 var _ fyne.Focusable = (*LogView)(nil)
@@ -16,38 +21,63 @@ var _ fyne.Shortcutable = (*LogView)(nil)
 
 type LogView struct {
 	widget.BaseWidget
-	textSize        float32
-	textStyle       fyne.TextStyle
-	wrapping        fyne.TextWrap
-	lines           linelist.LineList
-	propertyLock    sync.RWMutex
+
+	border   *canvas.Rectangle
+	scroller *container.Scroll
+	canvas   *logCanvas
+
+	textSize     float32
+	textStyle    fyne.TextStyle
+	wrapping     fyne.TextWrap
+	lines        linelist.LineList
+	propertyLock sync.RWMutex
+
 	shortcutHandler fyne.ShortcutHandler
 }
 
 func New() *LogView {
-	lv := LogView{
+	l := LogView{
+		border: &canvas.Rectangle{
+			StrokeColor:  theme.InputBorderColor(),
+			StrokeWidth:  theme.InputBorderSize(),
+			CornerRadius: theme.InputRadiusSize(),
+		},
 		textSize:  theme.TextSize(),
 		textStyle: fyne.TextStyle{Monospace: true},
 		wrapping:  fyne.TextWrapWord,
 	}
-	lv.ExtendBaseWidget(&lv)
 
-	lv.shortcutHandler.AddShortcut(&fyne.ShortcutCut{}, func(shortcut fyne.Shortcut) {
-		shortcut.(*fyne.ShortcutCut).Clipboard.SetContent(lv.lines.SelectionToString())
+	l.canvas = newLogCanvas(&l)
+	l.scroller = container.NewScroll(l.canvas)
+	l.scroller.OnScrolled = func(_ fyne.Position) {
+		l.canvas.Refresh()
+	}
+
+	l.shortcutHandler.AddShortcut(shortcutCut, func(shortcut fyne.Shortcut) {
+		shortcut.(*fyne.ShortcutCut).Clipboard.SetContent(l.lines.SelectionToString())
 	})
-	lv.shortcutHandler.AddShortcut(&fyne.ShortcutCopy{}, func(shortcut fyne.Shortcut) {
-		shortcut.(*fyne.ShortcutCopy).Clipboard.SetContent(lv.lines.SelectionToString())
+	l.shortcutHandler.AddShortcut(shortcutCopy, func(shortcut fyne.Shortcut) {
+		shortcut.(*fyne.ShortcutCopy).Clipboard.SetContent(l.lines.SelectionToString())
 	})
-	lv.shortcutHandler.AddShortcut(&fyne.ShortcutSelectAll{}, func(_ fyne.Shortcut) {
-		lv.lines.SelectAll()
-		lv.Refresh()
+	l.shortcutHandler.AddShortcut(shortcutSelectAll, func(_ fyne.Shortcut) {
+		l.lines.SelectAll()
+		l.Refresh()
 	})
 
-	return &lv
+	l.ExtendBaseWidget(&l)
+
+	return &l
 }
 
 func (l *LogView) CreateRenderer() fyne.WidgetRenderer {
-	return newViewRenderer(l)
+	r := NewStackRenderer(l.scroller, l.border)
+	r.OnLayout = func(_ fyne.Size) {
+		l.canvas.Refresh()
+	}
+	r.OnRefresh = func() {
+		l.canvas.Refresh()
+	}
+	return r
 }
 
 func (l *LogView) FocusGained() {
@@ -116,14 +146,20 @@ func (l *LogView) showContextMenu(absolutePos fyne.Position) {
 	driver := fyne.CurrentApp().Driver()
 	cb := driver.AllWindows()[0].Clipboard()
 
-	copyItem := fyne.NewMenuItem("Copy", func() {
-		l.shortcutHandler.TypedShortcut(&fyne.ShortcutCopy{Clipboard: cb})
-	})
-	copyItem.Shortcut = &fyne.ShortcutCopy{}
-	selectAllItem := fyne.NewMenuItem("Select all", func() {
-		l.shortcutHandler.TypedShortcut(&fyne.ShortcutSelectAll{})
-	})
-	selectAllItem.Shortcut = &fyne.ShortcutSelectAll{}
+	copyItem := &fyne.MenuItem{
+		Label:    "Copy",
+		Shortcut: shortcutCopy,
+		Action: func() {
+			l.shortcutHandler.TypedShortcut(&fyne.ShortcutCopy{Clipboard: cb})
+		},
+	}
+	selectAllItem := &fyne.MenuItem{
+		Label:    "Select all",
+		Shortcut: shortcutSelectAll,
+		Action: func() {
+			l.shortcutHandler.TypedShortcut(shortcutSelectAll)
+		},
+	}
 
 	selStart, selEnd := l.lines.Selection()
 	copyItem.Disabled = selStart.Compare(selEnd) == 0
@@ -135,54 +171,10 @@ func (l *LogView) showContextMenu(absolutePos fyne.Position) {
 	popup.ShowAtPosition(absolutePos)
 }
 
-var _ fyne.WidgetRenderer = (*viewRenderer)(nil)
-
-type viewRenderer struct {
-	logView  *LogView
-	border   *canvas.Rectangle
-	scroller *container.Scroll
-	canvas   *logCanvas
-}
-
-func newViewRenderer(logView *LogView) *viewRenderer {
-	border := &canvas.Rectangle{
-		StrokeColor:  theme.InputBorderColor(),
-		CornerRadius: theme.InputRadiusSize(),
-		StrokeWidth:  theme.InputBorderSize(),
+func (l *LogView) scrollPointToVisible(p fyne.Position) {
+	startOffset, viewSize := l.scroller.Offset, l.scroller.Size()
+	l.scroller.Offset = fyne.Position{
+		X: alg.Clamp(startOffset.X, p.X-viewSize.Width, p.X),
+		Y: alg.Clamp(startOffset.Y, p.Y-viewSize.Height, p.Y),
 	}
-
-	scroller := container.NewScroll(nil)
-
-	renderer := &viewRenderer{
-		logView:  logView,
-		border:   border,
-		scroller: scroller,
-		canvas:   newLogCanvas(logView, scroller),
-	}
-
-	scroller.Content = renderer.canvas
-
-	return renderer
-}
-
-func (r *viewRenderer) Destroy() {
-}
-
-func (r *viewRenderer) Layout(size fyne.Size) {
-	r.border.Resize(size)
-	r.scroller.Resize(size)
-	r.canvas.Refresh()
-}
-
-func (r *viewRenderer) MinSize() fyne.Size {
-	padding := theme.InnerPadding()
-	return fyne.Size{Width: padding * 2, Height: padding * 2}
-}
-
-func (r *viewRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.border, r.scroller}
-}
-
-func (r *viewRenderer) Refresh() {
-	r.canvas.Refresh()
 }

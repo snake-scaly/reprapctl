@@ -23,33 +23,9 @@ func newLogCanvasItem(color color.Color) *logCanvasItem {
 }
 
 func (i *logCanvasItem) CreateRenderer() fyne.WidgetRenderer {
-	return &logCanvasItemRenderer{text: i.Text}
+	return widget.NewSimpleRenderer(i.Text)
 }
 
 func (i *logCanvasItem) charPos(offset int) float32 {
 	return i.Position().X + fyne.MeasureText(i.Text.Text[:offset], i.Text.TextSize, i.Text.TextStyle).Width
-}
-
-var _ fyne.WidgetRenderer = (*logCanvasItemRenderer)(nil)
-
-type logCanvasItemRenderer struct {
-	text *canvas.Text
-}
-
-func (r *logCanvasItemRenderer) Destroy() {
-}
-
-func (r *logCanvasItemRenderer) Layout(_ fyne.Size) {
-}
-
-func (r *logCanvasItemRenderer) MinSize() fyne.Size {
-	return r.text.MinSize()
-}
-
-func (r *logCanvasItemRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.text}
-}
-
-func (r *logCanvasItemRenderer) Refresh() {
-	r.text.Refresh()
 }

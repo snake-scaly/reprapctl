@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -24,20 +23,19 @@ var _ desktop.Mouseable = (*logCanvas)(nil)
 
 type logCanvas struct {
 	widget.BaseWidget
-	logView        *LogView
-	parentScroller *container.Scroll
-	renderer       atomic.Pointer[logCanvasRenderer]
-	selecting      atomic.Bool
+	logView   *LogView
+	renderer  atomic.Pointer[logCanvasRenderer]
+	selecting atomic.Bool
 }
 
-func newLogCanvas(logView *LogView, parentScroller *container.Scroll) *logCanvas {
-	c := &logCanvas{logView: logView, parentScroller: parentScroller}
+func newLogCanvas(logView *LogView) *logCanvas {
+	c := &logCanvas{logView: logView}
 	c.ExtendBaseWidget(c)
 	return c
 }
 
 func (c *logCanvas) CreateRenderer() fyne.WidgetRenderer {
-	r := newLogCanvasRenderer(c.logView, c.parentScroller)
+	r := newLogCanvasRenderer(c.logView)
 	c.renderer.Store(r)
 	return r
 }
@@ -45,22 +43,14 @@ func (c *logCanvas) CreateRenderer() fyne.WidgetRenderer {
 func (c *logCanvas) Dragged(e *fyne.DragEvent) {
 	a := c.getAnchorAtPoint(e.Position)
 	if c.selecting.Load() {
-		c.logView.lines.EndSelection(a)
-		if e.Position.Y < c.parentScroller.Offset.Y {
-			c.parentScroller.Offset.Y = e.Position.Y
-			c.parentScroller.Refresh()
-		}
-		scrollerSize := c.parentScroller.Size()
-		if e.Position.Y >= c.parentScroller.Offset.Y+scrollerSize.Height {
-			c.parentScroller.Offset.Y = e.Position.Y - scrollerSize.Height
-			c.parentScroller.Refresh()
-		}
+		c.logView.lines.SetSelectionEnd(a)
+		c.logView.scrollPointToVisible(e.Position)
 	} else {
 		c.logView.requestFocus()
 		c.logView.lines.StartSelection(a)
 		c.selecting.Store(true)
 	}
-	c.Refresh()
+	c.logView.Refresh()
 }
 
 func (c *logCanvas) DragEnd() {
@@ -146,8 +136,7 @@ func (c *logCanvas) getAnchorAtPoint(p fyne.Position) doc.Anchor {
 var _ fyne.WidgetRenderer = (*logCanvasRenderer)(nil)
 
 type logCanvasRenderer struct {
-	logView        *LogView
-	parentScroller *container.Scroll
+	logView *LogView
 
 	wrappedLines []doc.DocumentFragment
 	wrapContext  wrapContext
@@ -170,11 +159,10 @@ type wrapContext struct {
 	textStyle       fyne.TextStyle
 }
 
-func newLogCanvasRenderer(logView *LogView, parentScroller *container.Scroll) *logCanvasRenderer {
+func newLogCanvasRenderer(logView *LogView) *logCanvasRenderer {
 	r := &logCanvasRenderer{
-		logView:        logView,
-		parentScroller: parentScroller,
-		visibleItems:   make(map[int]*logCanvasItem),
+		logView:      logView,
+		visibleItems: make(map[int]*logCanvasItem),
 	}
 
 	r.itemCache.New = func() any {
@@ -183,10 +171,6 @@ func newLogCanvasRenderer(logView *LogView, parentScroller *container.Scroll) *l
 
 	r.rectCache.New = func() any {
 		return canvas.NewRectangle(theme.SelectionColor())
-	}
-
-	parentScroller.OnScrolled = func(_ fyne.Position) {
-		r.Refresh()
 	}
 
 	r.objects.Store(make([]fyne.CanvasObject, 0))
@@ -241,8 +225,9 @@ func (r *logCanvasRenderer) Refresh() {
 		innerPadding := theme.InnerPadding()
 		topOffset := innerPadding
 
-		top := alg.Clamp(int((r.parentScroller.Offset.Y-topOffset)/lineHeight), 0, len(lines)-1)
-		bottom := alg.Clamp(int((r.parentScroller.Offset.Y+r.parentScroller.Size().Height-topOffset)/lineHeight), 0, len(lines)-1)
+		scroller := r.logView.scroller
+		top := alg.Clamp(int((scroller.Offset.Y-topOffset)/lineHeight), 0, len(lines)-1)
+		bottom := alg.Clamp(int((scroller.Offset.Y+scroller.Size().Height-topOffset)/lineHeight), 0, len(lines)-1)
 
 		textSize := r.logView.TextSize()
 		textStyle := r.logView.TextStyle()
@@ -338,7 +323,7 @@ func (r *logCanvasRenderer) itemHeight() float32 {
 }
 
 func (r *logCanvasRenderer) rewrap() []doc.DocumentFragment {
-	width := r.parentScroller.Size().Width - theme.InnerPadding()*2
+	width := r.logView.scroller.Size().Width - theme.InnerPadding()*2
 
 	r.wrapLock.RLock()
 	lastWrapped := r.wrappedLines

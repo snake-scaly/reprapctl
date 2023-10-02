@@ -58,7 +58,7 @@ func (l *LineList) StartSelection(a doc.Anchor) {
 	l.selectionEnd = a
 }
 
-func (l *LineList) EndSelection(a doc.Anchor) {
+func (l *LineList) SetSelectionEnd(a doc.Anchor) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	l.selectionEnd = a
