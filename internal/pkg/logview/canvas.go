@@ -369,13 +369,14 @@ func (r *logCanvasRenderer) rewrap() []doc.Fragment {
 		return lastWrapped
 	}
 
-	measure := func(s string) float32 {
-		return fyne.MeasureText(s, context.textSize, context.textStyle).Width
-	}
+	var lines []string
+	r.logView.document.Read(func(ll []string) {
+		lines = make([]string, len(ll))
+		copy(lines, ll)
+	})
 
-	var wrapped []doc.Fragment
-	r.logView.document.Read(func(lines []string) {
-		wrapped = doc.WrapDocument(lines, context.width, context.wrap, measure)
+	wrapped := doc.WrapDocument(lines, context.width, context.wrap, func(s string) float32 {
+		return fyne.MeasureText(s, context.textSize, context.textStyle).Width
 	})
 
 	func() {
