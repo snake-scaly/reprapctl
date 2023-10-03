@@ -142,6 +142,14 @@ func (l *LogView) SetWrapping(wrapping fyne.TextWrap) {
 	l.wrapping = wrapping
 }
 
+func (l *LogView) Capacity() int {
+	return l.document.Capacity()
+}
+
+func (l *LogView) SetCapacity(c int) {
+	l.document.SetCapacity(c)
+}
+
 func (l *LogView) AddLine(line string) {
 	l.document.Add(line)
 }
