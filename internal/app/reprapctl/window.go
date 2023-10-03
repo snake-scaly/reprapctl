@@ -20,7 +20,7 @@ func CreateMainWindow(app fyne.App) fyne.Window {
 	}
 	w.SetMainMenu(&m)
 	logView := logview.New()
-	logView.SetCapacity(10)
+	logView.SetCapacity(50)
 	logView.AddLine("foo")
 	logView.AddLine("bar")
 	logView.AddLine("baz")

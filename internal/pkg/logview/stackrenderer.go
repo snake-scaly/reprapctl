@@ -5,9 +5,10 @@ import "fyne.io/fyne/v2"
 var _ fyne.WidgetRenderer = (*StackRenderer)(nil)
 
 type StackRenderer struct {
-	OnLayout  func(size fyne.Size)
-	OnRefresh func()
-	objects   []fyne.CanvasObject
+	OnLayout     func(size fyne.Size)
+	OnPreRefresh func()
+	OnRefresh    func()
+	objects      []fyne.CanvasObject
 }
 
 func NewStackRenderer(o ...fyne.CanvasObject) *StackRenderer {
@@ -39,6 +40,9 @@ func (r *StackRenderer) Objects() []fyne.CanvasObject {
 }
 
 func (r *StackRenderer) Refresh() {
+	if r.OnPreRefresh != nil {
+		r.OnPreRefresh()
+	}
 	for _, o := range r.objects {
 		o.Refresh()
 	}

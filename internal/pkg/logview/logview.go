@@ -31,6 +31,7 @@ type LogView struct {
 	textSize     float32
 	textStyle    fyne.TextStyle
 	wrapping     fyne.TextWrap
+	autoScroll   bool
 	document     doc.Document
 	propertyLock sync.RWMutex
 
@@ -44,14 +45,21 @@ func New() *LogView {
 			StrokeWidth:  theme.InputBorderSize(),
 			CornerRadius: theme.InputRadiusSize(),
 		},
-		textSize:  theme.TextSize(),
-		textStyle: fyne.TextStyle{Monospace: true},
-		wrapping:  fyne.TextWrapWord,
+		textSize:   theme.TextSize(),
+		textStyle:  fyne.TextStyle{Monospace: true},
+		wrapping:   fyne.TextWrapWord,
+		autoScroll: true,
 	}
 
 	l.canvas = newLogCanvas(&l)
 	l.scroller = container.NewScroll(l.canvas)
 	l.scroller.OnScrolled = func(_ fyne.Position) {
+		func() {
+			l.propertyLock.Lock()
+			defer l.propertyLock.Unlock()
+			l.autoScroll = l.scroller.Offset.Y+l.scroller.Size().Height >= l.scroller.Content.Size().Height
+		}()
+
 		l.canvas.Refresh()
 	}
 
@@ -84,8 +92,17 @@ func (l *LogView) CreateRenderer() fyne.WidgetRenderer {
 	r.OnLayout = func(_ fyne.Size) {
 		l.canvas.Refresh()
 	}
-	r.OnRefresh = func() {
+	r.OnPreRefresh = func() {
 		l.canvas.Refresh()
+	}
+	r.OnRefresh = func() {
+		l.propertyLock.RLock()
+		autoScroll := l.autoScroll
+		l.propertyLock.RUnlock()
+
+		if autoScroll {
+			l.scroller.ScrollToBottom()
+		}
 	}
 	return r
 }
