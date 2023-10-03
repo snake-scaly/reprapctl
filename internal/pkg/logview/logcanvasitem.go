@@ -5,7 +5,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/widget"
 	"image/color"
-	"reprapctl/internal/pkg/doc"
+	"reprapctl/pkg/doc"
 )
 
 var _ fyne.Widget = (*logCanvasItem)(nil)

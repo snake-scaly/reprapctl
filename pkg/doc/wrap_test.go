@@ -4,7 +4,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"github.com/stretchr/testify/assert"
-	"reprapctl/internal/pkg/doc"
+	"reprapctl/pkg/doc"
 	"testing"
 )
 
@@ -274,7 +274,7 @@ func TestWrapText(t *testing.T) {
 
 	result := doc.WrapDocument(lines, 40, fyne.TextWrapWord, measure)
 
-	want := []doc.DocumentFragment{
+	want := []doc.Fragment{
 		{Text: "Lorem", Anchor: doc.Anchor{LineIndex: 0}},
 		{Text: "ipsum", Anchor: doc.Anchor{LineIndex: 0, LineOffset: 6}},
 		{Text: "многа", Anchor: doc.Anchor{LineIndex: 1}},

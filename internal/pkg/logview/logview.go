@@ -7,8 +7,8 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"reprapctl/internal/pkg/linelist"
 	"reprapctl/pkg/alg"
+	"reprapctl/pkg/doc"
 	"sync"
 )
 
@@ -31,7 +31,7 @@ type LogView struct {
 	textSize     float32
 	textStyle    fyne.TextStyle
 	wrapping     fyne.TextWrap
-	lines        linelist.LineList
+	document     doc.Document
 	propertyLock sync.RWMutex
 
 	shortcutHandler fyne.ShortcutHandler
@@ -56,13 +56,13 @@ func New() *LogView {
 	}
 
 	l.shortcutHandler.AddShortcut(shortcutCut, func(shortcut fyne.Shortcut) {
-		shortcut.(*fyne.ShortcutCut).Clipboard.SetContent(l.lines.SelectionToString())
+		shortcut.(*fyne.ShortcutCut).Clipboard.SetContent(l.document.SelectionToString())
 	})
 	l.shortcutHandler.AddShortcut(shortcutCopy, func(shortcut fyne.Shortcut) {
-		shortcut.(*fyne.ShortcutCopy).Clipboard.SetContent(l.lines.SelectionToString())
+		shortcut.(*fyne.ShortcutCopy).Clipboard.SetContent(l.document.SelectionToString())
 	})
 	l.shortcutHandler.AddShortcut(shortcutSelectAll, func(_ fyne.Shortcut) {
-		l.lines.SelectAll()
+		l.document.SelectAll()
 		l.Refresh()
 	})
 	l.shortcutHandler.AddShortcut(shortcutWordWrap, func(_ fyne.Shortcut) {
@@ -143,7 +143,7 @@ func (l *LogView) SetWrapping(wrapping fyne.TextWrap) {
 }
 
 func (l *LogView) AddLine(line string) {
-	l.lines.Add(line)
+	l.document.Add(line)
 }
 
 func (l *LogView) requestFocus() {
@@ -179,7 +179,7 @@ func (l *LogView) showContextMenu(absolutePos fyne.Position) {
 		},
 	}
 
-	selStart, selEnd := l.lines.Selection()
+	selStart, selEnd := l.document.Selection()
 	copyItem.Disabled = selStart.Compare(selEnd) == 0
 
 	menu := fyne.NewMenu("", copyItem, selectAllItem, wordWrapItem)

@@ -7,8 +7,8 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"reprapctl/internal/pkg/doc"
 	"reprapctl/pkg/alg"
+	"reprapctl/pkg/doc"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -43,11 +43,11 @@ func (c *logCanvas) CreateRenderer() fyne.WidgetRenderer {
 func (c *logCanvas) Dragged(e *fyne.DragEvent) {
 	a := c.getAnchorAtPoint(e.Position)
 	if c.selecting.Load() {
-		c.logView.lines.SetSelectionEnd(a)
+		c.logView.document.SetSelectionEnd(a)
 		c.logView.scrollPointToVisible(e.Position)
 	} else {
 		c.logView.requestFocus()
-		c.logView.lines.StartSelection(a)
+		c.logView.document.StartSelection(a)
 		c.selecting.Store(true)
 	}
 	c.logView.Refresh()
@@ -59,7 +59,7 @@ func (c *logCanvas) DragEnd() {
 
 func (c *logCanvas) Tapped(_ *fyne.PointEvent) {
 	c.logView.requestFocus()
-	c.logView.lines.SelectNone()
+	c.logView.document.SelectNone()
 	c.Refresh()
 }
 
@@ -139,7 +139,7 @@ var _ fyne.WidgetRenderer = (*logCanvasRenderer)(nil)
 type logCanvasRenderer struct {
 	logView *LogView
 
-	wrappedLines []doc.DocumentFragment
+	wrappedLines []doc.Fragment
 	wrapContext  wrapContext
 	wrapLock     sync.RWMutex
 
@@ -227,7 +227,7 @@ func (r *logCanvasRenderer) Refresh() {
 }
 
 // renderItems assumes a write lock on r.itemsLock.
-func (r *logCanvasRenderer) renderItems(lines []doc.DocumentFragment, lineHeight float32) {
+func (r *logCanvasRenderer) renderItems(lines []doc.Fragment, lineHeight float32) {
 	visible := make(map[int]*logCanvasItem)
 
 	if len(lines) > 0 {
@@ -274,7 +274,7 @@ func (r *logCanvasRenderer) renderItems(lines []doc.DocumentFragment, lineHeight
 func (r *logCanvasRenderer) renderSelection(lineHeight float32) {
 	oldSelections := r.visibleSelections
 	selections := make([]*canvas.Rectangle, 0, len(r.visibleItems))
-	selStart, selEnd := r.logView.lines.Selection()
+	selStart, selEnd := r.logView.document.Selection()
 
 	for _, item := range r.visibleItems {
 		itemStart, itemEnd := item.Anchor, item.Anchor
@@ -344,7 +344,7 @@ func (r *logCanvasRenderer) itemHeight() float32 {
 	return float32(int(h))
 }
 
-func (r *logCanvasRenderer) rewrap() []doc.DocumentFragment {
+func (r *logCanvasRenderer) rewrap() []doc.Fragment {
 	width := r.logView.scroller.Size().Width - theme.InnerPadding()*2
 
 	r.wrapLock.RLock()
@@ -357,7 +357,7 @@ func (r *logCanvasRenderer) rewrap() []doc.DocumentFragment {
 	}
 
 	context := wrapContext{
-		documentVersion: r.logView.lines.Version(),
+		documentVersion: r.logView.document.Version(),
 		width:           width,
 		wrap:            r.logView.Wrapping(),
 		textSize:        r.logView.TextSize(),
@@ -373,8 +373,8 @@ func (r *logCanvasRenderer) rewrap() []doc.DocumentFragment {
 		return fyne.MeasureText(s, context.textSize, context.textStyle).Width
 	}
 
-	var wrapped []doc.DocumentFragment
-	r.logView.lines.Read(func(lines []string) {
+	var wrapped []doc.Fragment
+	r.logView.document.Read(func(lines []string) {
 		wrapped = doc.WrapDocument(lines, context.width, context.wrap, measure)
 	})
 

@@ -41,7 +41,8 @@ func WrapString(
 	width float32,
 	wrap fyne.TextWrap,
 	measure func(string) float32,
-	lineHandler func(string, int)) {
+	lineHandler func(string, int),
+) {
 
 	for _, runeOffsets := range buildRuneOffsets(text) {
 		if wrap == fyne.TextWrapOff || len(runeOffsets) == 1 {
@@ -72,20 +73,20 @@ func WrapDocument(
 	lines []string,
 	width float32,
 	wrap fyne.TextWrap,
-	measure func(string) float32) []DocumentFragment {
-
-	display := make([]DocumentFragment, 0, len(lines))
+	measure func(string) float32,
+) []Fragment {
+	fragments := make([]Fragment, 0, len(lines))
 
 	for i, e := range lines {
 		WrapString(e, width, wrap, measure, func(line string, offset int) {
-			display = append(display, DocumentFragment{
+			fragments = append(fragments, Fragment{
 				Text:   line,
 				Anchor: Anchor{LineIndex: i, LineOffset: offset},
 			})
 		})
 	}
 
-	return display
+	return fragments
 }
 
 // buildRuneOffsets finds offsets of each rune in a string, and returns an array of offsets
@@ -93,7 +94,8 @@ func WrapDocument(
 // The last element in each array is an offset beyond the last rune of the segment.
 //
 // An EOL is considered part of a line. This means that a string ending in EOL does not
-// produce an additional empty segment at the end.
+// produce an additional empty segment at the end. EOL is not included in the returned
+// segments.
 func buildRuneOffsets(s string) [][]int {
 	if len(s) == 0 {
 		return [][]int{{0}}
