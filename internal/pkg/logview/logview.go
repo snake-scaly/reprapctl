@@ -49,6 +49,7 @@ func New() *LogView {
 		textStyle:  fyne.TextStyle{Monospace: true},
 		wrapping:   fyne.TextWrapWord,
 		autoScroll: true,
+		document:   doc.New(),
 	}
 
 	l.canvas = newLogCanvas(&l)
@@ -64,13 +65,18 @@ func New() *LogView {
 	}
 
 	l.shortcutHandler.AddShortcut(shortcutCut, func(shortcut fyne.Shortcut) {
-		shortcut.(*fyne.ShortcutCut).Clipboard.SetContent(l.document.SelectionToString())
+		s, _ := l.document.String(bookmarkSelectionStart, bookmarkSelectionEnd, "\n")
+		shortcut.(*fyne.ShortcutCut).Clipboard.SetContent(s)
 	})
 	l.shortcutHandler.AddShortcut(shortcutCopy, func(shortcut fyne.Shortcut) {
-		shortcut.(*fyne.ShortcutCopy).Clipboard.SetContent(l.document.SelectionToString())
+		s, _ := l.document.String(bookmarkSelectionStart, bookmarkSelectionEnd, "\n")
+		shortcut.(*fyne.ShortcutCopy).Clipboard.SetContent(s)
 	})
 	l.shortcutHandler.AddShortcut(shortcutSelectAll, func(_ fyne.Shortcut) {
-		l.document.SelectAll()
+		start, _ := l.document.GetBookmark(doc.BookmarkStart)
+		end, _ := l.document.GetBookmark(doc.BookmarkEnd)
+		l.document.SetBookmark(bookmarkSelectionStart, start)
+		l.document.SetBookmark(bookmarkSelectionEnd, end)
 		l.Refresh()
 	})
 	l.shortcutHandler.AddShortcut(shortcutWordWrap, func(_ fyne.Shortcut) {
@@ -204,8 +210,9 @@ func (l *LogView) showContextMenu(absolutePos fyne.Position) {
 		},
 	}
 
-	selStart, selEnd := l.document.Selection()
-	copyItem.Disabled = selStart.Compare(selEnd) == 0
+	selStart, haveSelStart := l.document.GetBookmark(bookmarkSelectionStart)
+	selEnd, haveSelEnd := l.document.GetBookmark(bookmarkSelectionEnd)
+	copyItem.Disabled = !haveSelStart || !haveSelEnd || selStart.Compare(selEnd) == 0
 
 	menu := fyne.NewMenu("", copyItem, selectAllItem, wordWrapItem)
 
@@ -221,3 +228,10 @@ func (l *LogView) scrollPointToVisible(p fyne.Position) {
 		Y: alg.Clamp(startOffset.Y, p.Y-viewSize.Height, p.Y),
 	}
 }
+
+type bookmark int
+
+const (
+	bookmarkSelectionStart = bookmark(iota)
+	bookmarkSelectionEnd
+)

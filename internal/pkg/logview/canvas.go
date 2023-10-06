@@ -43,13 +43,13 @@ func (c *logCanvas) CreateRenderer() fyne.WidgetRenderer {
 func (c *logCanvas) Dragged(e *fyne.DragEvent) {
 	a := c.getAnchorAtPoint(e.Position)
 	if c.selecting.Load() {
-		c.logView.document.SetSelectionEnd(a)
 		c.logView.scrollPointToVisible(e.Position)
 	} else {
 		c.logView.requestFocus()
-		c.logView.document.StartSelection(a)
+		c.logView.document.SetBookmark(bookmarkSelectionStart, a)
 		c.selecting.Store(true)
 	}
+	c.logView.document.SetBookmark(bookmarkSelectionEnd, a)
 	c.logView.Refresh()
 }
 
@@ -59,7 +59,8 @@ func (c *logCanvas) DragEnd() {
 
 func (c *logCanvas) Tapped(_ *fyne.PointEvent) {
 	c.logView.requestFocus()
-	c.logView.document.SelectNone()
+	c.logView.document.RemoveBookmark(bookmarkSelectionStart)
+	c.logView.document.RemoveBookmark(bookmarkSelectionEnd)
 	c.Refresh()
 }
 
@@ -273,43 +274,51 @@ func (r *logCanvasRenderer) renderItems(lines []doc.Fragment, lineHeight float32
 // renderSelection assumes a write lock on r.itemsLock.
 func (r *logCanvasRenderer) renderSelection(lineHeight float32) {
 	oldSelections := r.visibleSelections
-	selections := make([]*canvas.Rectangle, 0, len(r.visibleItems))
-	selStart, selEnd := r.logView.document.Selection()
+	var selections []*canvas.Rectangle
+	selStart, haveSelStart := r.logView.document.GetBookmark(bookmarkSelectionStart)
+	selEnd, haveSelEnd := r.logView.document.GetBookmark(bookmarkSelectionEnd)
 
-	for _, item := range r.visibleItems {
-		itemStart, itemEnd := item.Anchor, item.Anchor
-		itemEnd.LineOffset += len(item.Text.Text)
-
-		if itemEnd.Compare(selStart) < 0 || itemStart.Compare(selEnd) > 0 {
-			continue
+	if haveSelStart && haveSelEnd && selStart.Compare(selEnd) != 0 {
+		selections = make([]*canvas.Rectangle, 0, len(r.visibleItems))
+		if selStart.Compare(selEnd) > 0 {
+			selStart, selEnd = selEnd, selStart
 		}
 
-		itemPos, itemWidth := item.Position(), item.MinSize().Width
-		var x1, x2 float32
+		for _, item := range r.visibleItems {
+			itemStart, itemEnd := item.Anchor, item.Anchor
+			itemEnd.LineOffset += len(item.Text.Text)
 
-		switch {
-		case itemStart.Compare(selStart) <= 0 && itemEnd.Compare(selEnd) >= 0:
-			x1 = item.charPos(selStart.LineOffset - itemStart.LineOffset)
-			x2 = item.charPos(selEnd.LineOffset - itemStart.LineOffset)
-		case itemStart.Compare(selStart) <= 0 && itemEnd.Compare(selStart) >= 0:
-			x1, x2 = item.charPos(selStart.LineOffset-itemStart.LineOffset), itemPos.X+itemWidth
-		case itemStart.Compare(selEnd) <= 0 && itemEnd.Compare(selEnd) >= 0:
-			x1, x2 = itemPos.X, item.charPos(selEnd.LineOffset-itemStart.LineOffset)
-		default:
-			x1, x2 = itemPos.X, itemPos.X+itemWidth
+			if itemEnd.Compare(selStart) < 0 || itemStart.Compare(selEnd) > 0 {
+				continue
+			}
+
+			itemPos, itemWidth := item.Position(), item.MinSize().Width
+			var x1, x2 float32
+
+			switch {
+			case itemStart.Compare(selStart) <= 0 && itemEnd.Compare(selEnd) >= 0:
+				x1 = item.charPos(selStart.LineOffset - itemStart.LineOffset)
+				x2 = item.charPos(selEnd.LineOffset - itemStart.LineOffset)
+			case itemStart.Compare(selStart) <= 0 && itemEnd.Compare(selStart) >= 0:
+				x1, x2 = item.charPos(selStart.LineOffset-itemStart.LineOffset), itemPos.X+itemWidth
+			case itemStart.Compare(selEnd) <= 0 && itemEnd.Compare(selEnd) >= 0:
+				x1, x2 = itemPos.X, item.charPos(selEnd.LineOffset-itemStart.LineOffset)
+			default:
+				x1, x2 = itemPos.X, itemPos.X+itemWidth
+			}
+
+			var rect *canvas.Rectangle
+			if len(oldSelections) != 0 {
+				last := len(oldSelections) - 1
+				rect, oldSelections = oldSelections[last], oldSelections[:last]
+			} else {
+				rect = r.rectCache.Get().(*canvas.Rectangle)
+			}
+
+			rect.Move(fyne.Position{X: x1, Y: itemPos.Y})
+			rect.Resize(fyne.Size{Width: x2 - x1, Height: lineHeight})
+			selections = append(selections, rect)
 		}
-
-		var rect *canvas.Rectangle
-		if len(oldSelections) != 0 {
-			last := len(oldSelections) - 1
-			rect, oldSelections = oldSelections[last], oldSelections[:last]
-		} else {
-			rect = r.rectCache.Get().(*canvas.Rectangle)
-		}
-
-		rect.Move(fyne.Position{X: x1, Y: itemPos.Y})
-		rect.Resize(fyne.Size{Width: x2 - x1, Height: lineHeight})
-		selections = append(selections, rect)
 	}
 
 	// recycle unused rects
