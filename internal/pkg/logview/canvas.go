@@ -117,13 +117,9 @@ func (c *logCanvas) getAnchorAtPoint(p fyne.Position) doc.Anchor {
 			continue
 		}
 
-		offset, _ := alg.BinarySearch(len(item.Text.Text), p.X-ip.X, func(i int) float32 {
-			return fyne.MeasureText(item.Text.Text[:i], item.Text.TextSize, item.Text.TextStyle).Width
-		})
-
 		return doc.Anchor{
 			LineIndex:  item.Anchor.LineIndex,
-			LineOffset: item.Anchor.LineOffset + offset,
+			LineOffset: item.Anchor.LineOffset + item.XToChar(p.X-ip.X),
 		}
 	}
 
@@ -131,7 +127,7 @@ func (c *logCanvas) getAnchorAtPoint(p fyne.Position) doc.Anchor {
 	lastItem := sorted[len(sorted)-1]
 	return doc.Anchor{
 		LineIndex:  lastItem.Anchor.LineIndex,
-		LineOffset: lastItem.Anchor.LineOffset + len(lastItem.Text.Text),
+		LineOffset: lastItem.Anchor.LineOffset + len(lastItem.Text()),
 	}
 }
 
@@ -252,9 +248,7 @@ func (r *logCanvasRenderer) renderItems(lines []doc.Fragment, lineHeight float32
 					Y: innerPadding + lineHeight*float32(i),
 				})
 			}
-			item.Text.Text = lines[i].Text
-			item.Text.TextSize = textSize
-			item.Text.TextStyle = textStyle
+			item.SetText(lines[i].Text, textSize, textStyle)
 			item.Anchor = lines[i].Anchor
 			item.Refresh()
 			visible[i] = item
@@ -286,7 +280,7 @@ func (r *logCanvasRenderer) renderSelection(lineHeight float32) {
 
 		for _, item := range r.visibleItems {
 			itemStart, itemEnd := item.Anchor, item.Anchor
-			itemEnd.LineOffset += len(item.Text.Text)
+			itemEnd.LineOffset += len(item.Text())
 
 			if itemEnd.Compare(selStart) < 0 || itemStart.Compare(selEnd) > 0 {
 				continue
@@ -297,12 +291,14 @@ func (r *logCanvasRenderer) renderSelection(lineHeight float32) {
 
 			switch {
 			case itemStart.Compare(selStart) <= 0 && itemEnd.Compare(selEnd) >= 0:
-				x1 = item.charPos(selStart.LineOffset - itemStart.LineOffset)
-				x2 = item.charPos(selEnd.LineOffset - itemStart.LineOffset)
+				x1 = itemPos.X + item.CharToX(selStart.LineOffset-itemStart.LineOffset)
+				x2 = itemPos.X + item.CharToX(selEnd.LineOffset-itemStart.LineOffset)
 			case itemStart.Compare(selStart) <= 0 && itemEnd.Compare(selStart) >= 0:
-				x1, x2 = item.charPos(selStart.LineOffset-itemStart.LineOffset), itemPos.X+itemWidth
+				x1 = itemPos.X + item.CharToX(selStart.LineOffset-itemStart.LineOffset)
+				x2 = itemPos.X + itemWidth
 			case itemStart.Compare(selEnd) <= 0 && itemEnd.Compare(selEnd) >= 0:
-				x1, x2 = itemPos.X, item.charPos(selEnd.LineOffset-itemStart.LineOffset)
+				x1 = itemPos.X
+				x2 = itemPos.X + item.CharToX(selEnd.LineOffset-itemStart.LineOffset)
 			default:
 				x1, x2 = itemPos.X, itemPos.X+itemWidth
 			}
