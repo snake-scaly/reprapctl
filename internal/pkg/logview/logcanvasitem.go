@@ -13,9 +13,9 @@ var _ fyne.Widget = (*logCanvasItem)(nil)
 
 type logCanvasItem struct {
 	widget.BaseWidget
-	Anchor doc.Anchor
-	text   *canvas.Text
-	size   fyne.Size
+	box  *TextBox
+	text *canvas.Text
+	size fyne.Size
 }
 
 func newLogCanvasItem(color color.Color) *logCanvasItem {
@@ -28,26 +28,43 @@ func (i *logCanvasItem) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(i.text)
 }
 
-func (i *logCanvasItem) MinSize() fyne.Size {
-	return i.size
-}
+func (i *logCanvasItem) MinSize() fyne.Size { return i.size }
 
-func (i *logCanvasItem) SetText(text string, size float32, style fyne.TextStyle) {
-	i.text.Text = text
-	i.text.TextSize = size
-	i.text.TextStyle = style
+func (i *logCanvasItem) Set(box *TextBox) {
+	i.box = box
+	i.text.Text = box.Text
+	i.text.TextSize = box.TextSize
+	i.text.TextStyle = box.TextStyle
 	i.size = i.text.MinSize()
 }
 
-func (i *logCanvasItem) XToChar(x float32) int {
-	char, _ := alg.BinarySearch(len(i.text.Text), x, i.CharToX)
-	return char
+func (i *logCanvasItem) AnchorAtX(x float32) doc.Anchor {
+	char, _ := alg.BinarySearch(len(i.box.Text), x, i.CharToX)
+	anchor := i.box.StartAnchor()
+	anchor.LineOffset += char
+	return anchor
 }
 
 func (i *logCanvasItem) CharToX(offset int) float32 {
 	return fyne.MeasureText(i.text.Text[:offset], i.text.TextSize, i.text.TextStyle).Width
 }
 
-func (i *logCanvasItem) Text() string {
-	return i.text.Text
+var _ fyne.Widget = (*logSelectionRect)(nil)
+
+type logSelectionRect struct {
+	widget.BaseWidget
+	rect *canvas.Rectangle
+	tag  int
+}
+
+func newLogSelectionRect() *logSelectionRect {
+	r := &logSelectionRect{
+		rect: canvas.NewRectangle(color.Black),
+	}
+	r.ExtendBaseWidget(r)
+	return r
+}
+
+func (r *logSelectionRect) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(r.rect)
 }

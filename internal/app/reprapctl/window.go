@@ -20,7 +20,7 @@ func CreateMainWindow(app fyne.App) fyne.Window {
 	}
 	w.SetMainMenu(&m)
 	logView := logview.New()
-	logView.SetCapacity(50)
+	logView.SetCapacity(2000)
 	logView.AddLine("foo")
 	logView.AddLine("bar")
 	logView.AddLine("baz")
@@ -31,11 +31,14 @@ func CreateMainWindow(app fyne.App) fyne.Window {
 			"        Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat " +
 			"nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia " +
 			"deserunt mollit anim id est laborum.")
+	var i int
+	for ; i < 1990; i++ {
+		logView.AddLine(fmt.Sprint("Line #", i))
+	}
 	go func() {
-		var i int
 		for {
 			<-time.After(1 * time.Second)
-			logView.AddLine(fmt.Sprintf("Line %v", i))
+			logView.AddLine(fmt.Sprintf("Line #%v", i))
 			logView.Refresh()
 			i++
 		}

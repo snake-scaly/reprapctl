@@ -12,8 +12,8 @@ func TestWrapString(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	measure := func(s string) float32 {
-		return fyne.MeasureText(s, 10, fyne.TextStyle{}).Width
+	measure := func(s string) fyne.Size {
+		return fyne.MeasureText(s, 10, fyne.TextStyle{})
 	}
 
 	type line struct {
@@ -141,7 +141,7 @@ func TestWrapString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var lines []line
-			doc.WrapString(tt.text, tt.width, tt.wrap, measure, func(s string, i int) {
+			doc.WrapString(tt.text, tt.width, tt.wrap, measure, func(s string, i int, z fyne.Size) {
 				lines = append(lines, line{text: s, offset: i})
 			})
 			assert.Equal(t, tt.want, lines)
@@ -150,13 +150,14 @@ func TestWrapString(t *testing.T) {
 }
 
 func TestWrapString_WordWrapCornerCases(t *testing.T) {
-	measure := func(s string) float32 {
-		return float32(len(s))
+	measure := func(s string) fyne.Size {
+		return fyne.Size{Width: float32(len(s))}
 	}
 
 	type line struct {
 		text   string
 		offset int
+		width  float32
 	}
 
 	tests := []struct {
@@ -168,31 +169,31 @@ func TestWrapString_WordWrapCornerCases(t *testing.T) {
 			name: "WordEndsOnBoundary",
 			text: "01234 678",
 			want: []line{
-				{text: "01234"},
-				{text: "678", offset: 6},
+				{text: "01234", width: 5},
+				{text: "678", offset: 6, width: 3},
 			},
 		},
 		{
 			name: "WhiteSpaceCrossesBoundary",
 			text: "0123  678",
 			want: []line{
-				{text: "0123"},
-				{text: "678", offset: 6},
+				{text: "0123", width: 4},
+				{text: "678", offset: 6, width: 3},
 			},
 		},
 		{
 			name: "BreakAfterPunctuation",
 			text: "012.45678",
 			want: []line{
-				{text: "012."},
-				{text: "45678", offset: 4},
+				{text: "012.", width: 4},
+				{text: "45678", offset: 4, width: 5},
 			},
 		},
 		{
 			name: "LineEndsOnBoundary",
 			text: "01 34",
 			want: []line{
-				{text: "01 34"},
+				{text: "01 34", width: 5},
 			},
 		},
 	}
@@ -200,8 +201,8 @@ func TestWrapString_WordWrapCornerCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var lines []line
-			doc.WrapString(tt.text, 5, fyne.TextWrapWord, measure, func(s string, i int) {
-				lines = append(lines, line{text: s, offset: i})
+			doc.WrapString(tt.text, 5, fyne.TextWrapWord, measure, func(s string, i int, z fyne.Size) {
+				lines = append(lines, line{text: s, offset: i, width: z.Width})
 			})
 			assert.Equal(t, tt.want, lines)
 		})
@@ -209,8 +210,8 @@ func TestWrapString_WordWrapCornerCases(t *testing.T) {
 }
 
 func TestWrapString_ForceWrapNewLine(t *testing.T) {
-	measure := func(s string) float32 {
-		return float32(len(s))
+	measure := func(s string) fyne.Size {
+		return fyne.Size{Width: float32(len(s))}
 	}
 
 	tests := []struct {
@@ -234,55 +235,29 @@ func TestWrapString_ForceWrapNewLine(t *testing.T) {
 	type line struct {
 		text   string
 		offset int
+		width  float32
 	}
 
 	want := []line{
-		{text: "ab"},
-		{text: "cd", offset: 3},
-		{text: "ef", offset: 6},
-		{text: "gh", offset: 10},
-		{text: "", offset: 13},
-		{text: "", offset: 15},
-		{text: "", offset: 16},
+		{text: "ab", width: 2},
+		{text: "cd", offset: 3, width: 2},
+		{text: "ef", offset: 6, width: 2},
+		{text: "gh", offset: 10, width: 2},
+		{text: "", offset: 13, width: 0},
+		{text: "", offset: 15, width: 0},
+		{text: "", offset: 16, width: 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var lines []line
-			doc.WrapString("ab\ncd\ref\r\ngh\r\r\n\n\r", 5, fyne.TextWrapWord, measure, func(s string, i int) {
-				lines = append(lines, line{text: s, offset: i})
-			})
+			doc.WrapString(
+				"ab\ncd\ref\r\ngh\r\r\n\n\r", 5, fyne.TextWrapWord, measure,
+				func(s string, i int, z fyne.Size,
+				) {
+					lines = append(lines, line{text: s, offset: i, width: z.Width})
+				})
 			assert.Equal(t, want, lines)
 		})
 	}
-}
-
-func TestWrapText(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-
-	lines := []string{
-		"Lorem ipsum",
-		"многа букф",
-		"ライスヌードル",
-		"",
-	}
-
-	measure := func(s string) float32 {
-		return fyne.MeasureText(s, 10, fyne.TextStyle{}).Width
-	}
-
-	result := doc.WrapDocument(lines, 40, fyne.TextWrapWord, measure)
-
-	want := []doc.Fragment{
-		{Text: "Lorem", Anchor: doc.Anchor{LineIndex: 0}},
-		{Text: "ipsum", Anchor: doc.Anchor{LineIndex: 0, LineOffset: 6}},
-		{Text: "многа", Anchor: doc.Anchor{LineIndex: 1}},
-		{Text: "букф", Anchor: doc.Anchor{LineIndex: 1, LineOffset: 11}},
-		{Text: "ライスヌー", Anchor: doc.Anchor{LineIndex: 2}},
-		{Text: "ドル", Anchor: doc.Anchor{LineIndex: 2, LineOffset: 15}},
-		{Text: "", Anchor: doc.Anchor{LineIndex: 3}},
-	}
-
-	assert.Equal(t, want, result)
 }

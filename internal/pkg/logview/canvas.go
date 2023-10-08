@@ -1,15 +1,12 @@
 package logview
 
 import (
-	"cmp"
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"reprapctl/pkg/alg"
 	"reprapctl/pkg/doc"
-	"slices"
 	"sync"
 	"sync/atomic"
 )
@@ -41,13 +38,17 @@ func (c *logCanvas) CreateRenderer() fyne.WidgetRenderer {
 }
 
 func (c *logCanvas) Dragged(e *fyne.DragEvent) {
-	a := c.getAnchorAtPoint(e.Position)
+	renderer := c.renderer.Load()
+	if renderer == nil {
+		return
+	}
+	a := renderer.getAnchorAtPoint(e.Position)
 	if c.selecting.Load() {
 		c.logView.scrollPointToVisible(e.Position)
 	} else {
+		c.selecting.Store(true)
 		c.logView.requestFocus()
 		c.logView.document.SetBookmark(bookmarkSelectionStart, a)
-		c.selecting.Store(true)
 	}
 	c.logView.document.SetBookmark(bookmarkSelectionEnd, a)
 	c.logView.Refresh()
@@ -61,7 +62,7 @@ func (c *logCanvas) Tapped(_ *fyne.PointEvent) {
 	c.logView.requestFocus()
 	c.logView.document.RemoveBookmark(bookmarkSelectionStart)
 	c.logView.document.RemoveBookmark(bookmarkSelectionEnd)
-	c.Refresh()
+	c.logView.Refresh()
 }
 
 func (c *logCanvas) TappedSecondary(e *fyne.PointEvent) {
@@ -80,68 +81,16 @@ func (c *logCanvas) MouseDown(_ *desktop.MouseEvent) {
 func (c *logCanvas) MouseUp(_ *desktop.MouseEvent) {
 }
 
-func (c *logCanvas) getAnchorAtPoint(p fyne.Position) doc.Anchor {
-	renderer := c.renderer.Load()
-	if renderer == nil {
-		// no renderer, nothing to select
-		return doc.Anchor{}
-	}
-
-	objects := renderer.Objects()
-	sorted := make([]*logCanvasItem, 0, len(objects))
-	for _, o := range objects {
-		if item, ok := o.(*logCanvasItem); ok {
-			sorted = append(sorted, item)
-		}
-	}
-	if len(sorted) == 0 {
-		// empty document, nothing to select
-		return doc.Anchor{}
-	}
-	slices.SortFunc(sorted, func(a, b *logCanvasItem) int {
-		return cmp.Compare(a.Position().Y, b.Position().Y)
-	})
-
-	lineSpacing := theme.LineSpacing()
-
-	if p.Y < sorted[0].Position().Y {
-		// cursor is above all lines; return start of the first line
-		return sorted[0].Anchor
-	}
-
-	for _, item := range sorted {
-		ip := item.Position()
-		is := item.MinSize()
-		if p.Y >= ip.Y+is.Height+lineSpacing {
-			// cursor is below the current line
-			continue
-		}
-
-		return doc.Anchor{
-			LineIndex:  item.Anchor.LineIndex,
-			LineOffset: item.Anchor.LineOffset + item.XToChar(p.X-ip.X),
-		}
-	}
-
-	// cursor is below all lines; return end of the last line
-	lastItem := sorted[len(sorted)-1]
-	return doc.Anchor{
-		LineIndex:  lastItem.Anchor.LineIndex,
-		LineOffset: lastItem.Anchor.LineOffset + len(lastItem.Text()),
-	}
-}
-
 var _ fyne.WidgetRenderer = (*logCanvasRenderer)(nil)
 
 type logCanvasRenderer struct {
 	logView *LogView
 
-	wrappedLines []doc.Fragment
-	wrapContext  wrapContext
-	wrapLock     sync.RWMutex
-
+	wrapContext       wrapContext
+	wrappedLines      []Box
 	visibleItems      map[int]*logCanvasItem
-	visibleSelections []*canvas.Rectangle
+	visibleSelections map[int]*logSelectionRect
+	refreshId         int
 	itemsLock         sync.RWMutex
 
 	itemCache sync.Pool
@@ -159,8 +108,9 @@ type wrapContext struct {
 
 func newLogCanvasRenderer(logView *LogView) *logCanvasRenderer {
 	r := &logCanvasRenderer{
-		logView:      logView,
-		visibleItems: make(map[int]*logCanvasItem),
+		logView:           logView,
+		visibleItems:      make(map[int]*logCanvasItem),
+		visibleSelections: make(map[int]*logSelectionRect),
 	}
 
 	r.itemCache.New = func() any {
@@ -168,7 +118,7 @@ func newLogCanvasRenderer(logView *LogView) *logCanvasRenderer {
 	}
 
 	r.rectCache.New = func() any {
-		return canvas.NewRectangle(theme.SelectionColor())
+		return newLogSelectionRect()
 	}
 
 	r.objects.Store(make([]fyne.CanvasObject, 0))
@@ -183,27 +133,23 @@ func (r *logCanvasRenderer) Layout(_ fyne.Size) {
 }
 
 func (r *logCanvasRenderer) MinSize() fyne.Size {
-	var minItemWidth float32
-	func() {
-		r.itemsLock.RLock()
-		defer r.itemsLock.RUnlock()
-		for _, item := range r.visibleItems {
-			minItemWidth = max(minItemWidth, item.MinSize().Width)
-		}
-	}()
-
-	itemHeight := r.itemHeight()
 	innerPadding := theme.InnerPadding()
-	lineSpacing := theme.LineSpacing()
 
-	r.wrapLock.RLock()
-	itemsCount := len(r.wrappedLines)
-	r.wrapLock.RUnlock()
+	r.itemsLock.RLock()
+	defer r.itemsLock.RUnlock()
 
-	return fyne.Size{
-		Width:  minItemWidth + innerPadding*2,
-		Height: (itemHeight+lineSpacing)*float32(itemsCount) + innerPadding*2,
+	minSize := fyne.Size{Width: innerPadding * 2, Height: innerPadding * 2}
+
+	for _, item := range r.visibleItems {
+		minSize.Width = max(minSize.Width, item.Position().X+item.MinSize().Width+innerPadding)
 	}
+
+	if nLines := len(r.wrappedLines); nLines > 0 {
+		lastBox := r.wrappedLines[nLines-1]
+		minSize.Height = lastBox.Position().Y + lastBox.Size().Height + innerPadding
+	}
+
+	return minSize
 }
 
 func (r *logCanvasRenderer) Objects() []fyne.CanvasObject {
@@ -211,122 +157,113 @@ func (r *logCanvasRenderer) Objects() []fyne.CanvasObject {
 }
 
 func (r *logCanvasRenderer) Refresh() {
-	lines := r.rewrap()
-	lineSpacing := theme.LineSpacing()
-	lineHeight := r.itemHeight() + lineSpacing
-
 	r.itemsLock.Lock()
 	defer r.itemsLock.Unlock()
 
-	r.renderItems(lines, lineHeight)
-	r.renderSelection(lineHeight)
+	r.refreshId++
+
+	dirty := r.rewrap()
+	r.renderItems(dirty)
+	r.renderSelection()
 	r.cacheObjects()
 }
 
 // renderItems assumes a write lock on r.itemsLock.
-func (r *logCanvasRenderer) renderItems(lines []doc.Fragment, lineHeight float32) {
-	visible := make(map[int]*logCanvasItem)
+func (r *logCanvasRenderer) renderItems(dirty bool) {
+	scrollY, scrollH := r.logView.scroller.Offset.Y, r.logView.scroller.Size().Height
 
-	if len(lines) > 0 {
-		innerPadding := theme.InnerPadding()
-		topOffset := innerPadding
-
-		scroller := r.logView.scroller
-		top := alg.Clamp(int((scroller.Offset.Y-topOffset)/lineHeight), 0, len(lines)-1)
-		bottom := alg.Clamp(int((scroller.Offset.Y+scroller.Size().Height-topOffset)/lineHeight), 0, len(lines)-1)
-
-		textSize := r.logView.TextSize()
-		textStyle := r.logView.TextStyle()
-
-		// populate visible
-		for i := top; i <= bottom; i++ {
-			item, ok := r.visibleItems[i]
-			if !ok {
-				item = r.newItem()
-				item.Move(fyne.Position{
-					X: innerPadding,
-					Y: innerPadding + lineHeight*float32(i),
-				})
-			}
-			item.SetText(lines[i].Text, textSize, textStyle)
-			item.Anchor = lines[i].Anchor
-			item.Refresh()
-			visible[i] = item
-		}
+	isLineVisible := func(box Box) bool {
+		return box.Position().Y+box.Size().Height > scrollY && scrollY+scrollH > box.Position().Y
 	}
 
-	// recycle unused items
 	for i, item := range r.visibleItems {
-		if _, ok := visible[i]; !ok {
-			r.recycleItem(item)
+		if dirty || !isLineVisible(r.wrappedLines[i]) {
+			r.visibleItems[i] = nil
+			delete(r.visibleItems, i)
+			r.itemCache.Put(item)
 		}
 	}
 
-	r.visibleItems = visible
+	for i, box := range r.wrappedLines {
+		textBox := box.(*TextBox)
+
+		if textBox.Position().Y >= scrollY+scrollH {
+			break
+		}
+		if textBox.Position().Y+textBox.Size().Height <= scrollY || r.visibleItems[i] != nil {
+			continue
+		}
+
+		item := r.itemCache.Get().(*logCanvasItem)
+		item.Set(textBox)
+
+		p := textBox.Position()
+		p.Y += (textBox.Size().Height - item.MinSize().Height) / 2
+		item.Move(p)
+
+		item.Refresh()
+		r.visibleItems[i] = item
+	}
 }
 
 // renderSelection assumes a write lock on r.itemsLock.
-func (r *logCanvasRenderer) renderSelection(lineHeight float32) {
-	oldSelections := r.visibleSelections
-	var selections []*canvas.Rectangle
+func (r *logCanvasRenderer) renderSelection() {
 	selStart, haveSelStart := r.logView.document.GetBookmark(bookmarkSelectionStart)
 	selEnd, haveSelEnd := r.logView.document.GetBookmark(bookmarkSelectionEnd)
 
-	if haveSelStart && haveSelEnd && selStart.Compare(selEnd) != 0 {
-		selections = make([]*canvas.Rectangle, 0, len(r.visibleItems))
-		if selStart.Compare(selEnd) > 0 {
-			selStart, selEnd = selEnd, selStart
-		}
+	selMin, selMax := selStart, selEnd
+	if selMin.Compare(selMax) > 0 {
+		selMin, selMax = selMax, selMin
+	}
 
-		for _, item := range r.visibleItems {
-			itemStart, itemEnd := item.Anchor, item.Anchor
-			itemEnd.LineOffset += len(item.Text())
-
-			if itemEnd.Compare(selStart) < 0 || itemStart.Compare(selEnd) > 0 {
+	if haveSelStart && haveSelEnd {
+		selColor := theme.SelectionColor()
+		for i, item := range r.visibleItems {
+			itemStart := item.box.StartAnchor()
+			itemEnd := item.box.EndAnchor()
+			if itemStart.Compare(selMax) >= 0 || itemEnd.Compare(selMin) <= 0 {
 				continue
 			}
 
-			itemPos, itemWidth := item.Position(), item.MinSize().Width
-			var x1, x2 float32
+			selPos := item.box.Position()
+			selSize := item.box.Size()
 
-			switch {
-			case itemStart.Compare(selStart) <= 0 && itemEnd.Compare(selEnd) >= 0:
-				x1 = itemPos.X + item.CharToX(selStart.LineOffset-itemStart.LineOffset)
-				x2 = itemPos.X + item.CharToX(selEnd.LineOffset-itemStart.LineOffset)
-			case itemStart.Compare(selStart) <= 0 && itemEnd.Compare(selStart) >= 0:
-				x1 = itemPos.X + item.CharToX(selStart.LineOffset-itemStart.LineOffset)
-				x2 = itemPos.X + itemWidth
-			case itemStart.Compare(selEnd) <= 0 && itemEnd.Compare(selEnd) >= 0:
-				x1 = itemPos.X
-				x2 = itemPos.X + item.CharToX(selEnd.LineOffset-itemStart.LineOffset)
-			default:
-				x1, x2 = itemPos.X, itemPos.X+itemWidth
+			if itemStart.Compare(selMin) < 0 && itemEnd.Compare(selMax) > 0 {
+				x1 := item.CharToX(selMin.LineOffset - itemStart.LineOffset)
+				selPos.X += x1
+				selSize.Width = item.CharToX(selMax.LineOffset-itemStart.LineOffset) - x1
+			} else if itemStart.Compare(selMin) < 0 && itemEnd.Compare(selMin) > 0 {
+				x1 := item.CharToX(selMin.LineOffset - itemStart.LineOffset)
+				selPos.X += x1
+				selSize.Width -= x1
+			} else if itemStart.Compare(selMax) < 0 && itemEnd.Compare(selMax) > 0 {
+				selSize.Width = item.CharToX(selMax.LineOffset - itemStart.LineOffset)
 			}
 
-			var rect *canvas.Rectangle
-			if len(oldSelections) != 0 {
-				last := len(oldSelections) - 1
-				rect, oldSelections = oldSelections[last], oldSelections[:last]
-			} else {
-				rect = r.rectCache.Get().(*canvas.Rectangle)
+			rect := r.visibleSelections[i]
+			if rect == nil {
+				rect = r.rectCache.Get().(*logSelectionRect)
+				r.visibleSelections[i] = rect
 			}
 
-			rect.Move(fyne.Position{X: x1, Y: itemPos.Y})
-			rect.Resize(fyne.Size{Width: x2 - x1, Height: lineHeight})
-			selections = append(selections, rect)
+			rect.rect.FillColor = selColor
+			rect.tag = r.refreshId
+			rect.Move(selPos)
+			rect.Resize(selSize)
+			rect.Refresh()
 		}
 	}
 
-	// recycle unused rects
-	for _, o := range oldSelections {
-		r.rectCache.Put(o)
+	for i, sel := range r.visibleSelections {
+		if sel.tag != r.refreshId {
+			delete(r.visibleSelections, i)
+			r.rectCache.Put(sel)
+		}
 	}
-
-	r.visibleSelections = selections
 }
 
 func (r *logCanvasRenderer) cacheObjects() {
-	objects := make([]fyne.CanvasObject, 0, len(r.visibleItems))
+	objects := make([]fyne.CanvasObject, 0, len(r.visibleSelections)+len(r.visibleItems))
 	for _, rect := range r.visibleSelections {
 		objects = append(objects, rect)
 	}
@@ -336,29 +273,16 @@ func (r *logCanvasRenderer) cacheObjects() {
 	r.objects.Store(objects)
 }
 
-func (r *logCanvasRenderer) newItem() *logCanvasItem {
-	return r.itemCache.Get().(*logCanvasItem)
-}
-
-func (r *logCanvasRenderer) recycleItem(item *logCanvasItem) {
-	r.itemCache.Put(item)
-}
-
 func (r *logCanvasRenderer) itemHeight() float32 {
 	h := fyne.MeasureText("", r.logView.TextSize(), r.logView.TextStyle()).Height
 	return float32(int(h))
 }
 
-func (r *logCanvasRenderer) rewrap() []doc.Fragment {
-	width := r.logView.scroller.Size().Width - theme.InnerPadding()*2
-
-	r.wrapLock.RLock()
-	lastWrapped := r.wrappedLines
-	lastContext := r.wrapContext
-	r.wrapLock.RUnlock()
-
+func (r *logCanvasRenderer) rewrap() bool {
+	padding := theme.InnerPadding()
+	width := r.logView.scroller.Size().Width - padding*2
 	if width <= 0 {
-		return lastWrapped
+		return false
 	}
 
 	context := wrapContext{
@@ -370,9 +294,10 @@ func (r *logCanvasRenderer) rewrap() []doc.Fragment {
 	}
 
 	// no need to rewrap if context didn't change
-	if context == lastContext {
-		return lastWrapped
+	if context == r.wrapContext {
+		return false
 	}
+	r.wrapContext = context
 
 	var lines []string
 	r.logView.document.Read(func(ll []string) {
@@ -380,16 +305,50 @@ func (r *logCanvasRenderer) rewrap() []doc.Fragment {
 		copy(lines, ll)
 	})
 
-	wrapped := doc.WrapDocument(lines, context.width, context.wrap, func(s string) float32 {
-		return fyne.MeasureText(s, context.textSize, context.textStyle).Width
+	lineSpacing := theme.LineSpacing()
+	pos := fyne.Position{X: padding, Y: padding}
+	r.wrappedLines = make([]Box, 0, len(lines))
+
+	for i, line := range lines {
+		doc.WrapString(
+			line, context.width, context.wrap,
+			func(s string) fyne.Size {
+				return fyne.MeasureText(s, context.textSize, context.textStyle)
+			},
+			func(s string, o int, z fyne.Size) {
+				// round height down to avoid pixel artifacts
+				z.Height = float32(int(z.Height)) + lineSpacing
+				start := doc.Anchor{LineIndex: i, LineOffset: o}
+				end := doc.Anchor{LineIndex: i, LineOffset: o + len(s)}
+				r.wrappedLines = append(
+					r.wrappedLines, NewTextBox(pos, z, start, end, s, context.textSize, context.textStyle))
+				pos.Y += z.Height
+			},
+		)
+	}
+
+	return true
+}
+
+func (r *logCanvasRenderer) getAnchorAtPoint(p fyne.Position) doc.Anchor {
+	r.itemsLock.RLock()
+	defer r.itemsLock.RUnlock()
+	nLines := len(r.wrappedLines)
+	if nLines == 0 {
+		return doc.Anchor{}
+	}
+	lastLine := r.wrappedLines[nLines-1]
+	i, _ := alg.BinarySearch(nLines, p.Y, func(i int) float32 {
+		if i == nLines {
+			return lastLine.Position().Y + lastLine.Size().Height
+		}
+		return r.wrappedLines[i].Position().Y
 	})
-
-	func() {
-		r.wrapLock.Lock()
-		defer r.wrapLock.Unlock()
-		r.wrappedLines = wrapped
-		r.wrapContext = context
-	}()
-
-	return wrapped
+	if i == nLines {
+		return lastLine.EndAnchor()
+	}
+	if textBox, ok := r.wrappedLines[i].(*TextBox); ok {
+		return textBox.AnchorAtX(p.X - textBox.Position().X)
+	}
+	return r.wrappedLines[i].StartAnchor()
 }

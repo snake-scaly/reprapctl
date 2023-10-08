@@ -29,29 +29,29 @@ import (
 // in EOL, no additional empty line at the end is produced. The EOL itself is not
 // included in the resulting line.
 //
-// Measure function must calculate rendered width of a given string in the same
+// Measure function must calculate rendered size of a given string in the same
 // units as the width parameter. Implementations will usually call [fyne.MeasureText]
 // with the appropriate text style.
 //
 // LineHandler is called for each line found in text, in order of their appearance.
-// Handler receives a slice of text representing the line and a byte offset in text
-// where the line starts.
+// Handler receives a slice of text representing the line, a byte offset in text
+// where the line starts, and the line size returned by measure.
 func WrapString(
 	text string,
 	width float32,
 	wrap fyne.TextWrap,
-	measure func(string) float32,
-	lineHandler func(string, int),
+	measure func(string) fyne.Size,
+	lineHandler func(string, int, fyne.Size),
 ) {
-
 	for _, runeOffsets := range buildRuneOffsets(text) {
 		if wrap == fyne.TextWrapOff || len(runeOffsets) == 1 {
-			lineHandler(text[runeOffsets[0]:runeOffsets[len(runeOffsets)-1]], runeOffsets[0])
+			l := text[runeOffsets[0]:runeOffsets[len(runeOffsets)-1]]
+			lineHandler(l, runeOffsets[0], measure(l))
 			continue
 		}
 
 		metric := func(i int) float32 {
-			return measure(text[runeOffsets[0]:runeOffsets[i]])
+			return measure(text[runeOffsets[0]:runeOffsets[i]]).Width
 		}
 
 		for len(runeOffsets) > 1 {
@@ -63,30 +63,11 @@ func WrapString(
 					return r
 				})
 			}
-			lineHandler(text[runeOffsets[0]:runeOffsets[end]], runeOffsets[0])
+			l := text[runeOffsets[0]:runeOffsets[end]]
+			lineHandler(l, runeOffsets[0], measure(l))
 			runeOffsets = runeOffsets[next:]
 		}
 	}
-}
-
-func WrapDocument(
-	lines []string,
-	width float32,
-	wrap fyne.TextWrap,
-	measure func(string) float32,
-) []Fragment {
-	fragments := make([]Fragment, 0, len(lines))
-
-	for i, e := range lines {
-		WrapString(e, width, wrap, measure, func(line string, offset int) {
-			fragments = append(fragments, Fragment{
-				Text:   line,
-				Anchor: Anchor{LineIndex: i, LineOffset: offset},
-			})
-		})
-	}
-
-	return fragments
 }
 
 // buildRuneOffsets finds offsets of each rune in a string, and returns an array of offsets
