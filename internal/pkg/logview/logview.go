@@ -96,7 +96,7 @@ func New() *LogView {
 func (l *LogView) CreateRenderer() fyne.WidgetRenderer {
 	r := NewStackRenderer(l.scroller, l.border)
 	r.OnLayout = func(_ fyne.Size) {
-		l.canvas.Refresh()
+		l.Refresh()
 	}
 	r.OnPreRefresh = func() {
 		l.canvas.Refresh()
@@ -222,10 +222,17 @@ func (l *LogView) showContextMenu(absolutePos fyne.Position) {
 }
 
 func (l *LogView) scrollPointToVisible(p fyne.Position) {
-	startOffset, viewSize := l.scroller.Offset, l.scroller.Size()
-	l.scroller.Offset = fyne.Position{
-		X: alg.Clamp(startOffset.X, p.X-viewSize.Width, p.X),
-		Y: alg.Clamp(startOffset.Y, p.Y-viewSize.Height, p.Y),
+	startOffset, viewSize, canvasSize := l.scroller.Offset, l.scroller.Size(), l.canvas.MinSize()
+	var newOffset fyne.Position
+	newOffset.X = alg.Clamp(startOffset.X, p.X-viewSize.Width, p.X)
+	newOffset.X = alg.Clamp(newOffset.X, 0, max(0, canvasSize.Width-viewSize.Width))
+	newOffset.Y = alg.Clamp(startOffset.Y, p.Y-viewSize.Height, p.Y)
+	newOffset.Y = alg.Clamp(newOffset.Y, 0, max(0, canvasSize.Height-viewSize.Height))
+	if l.scroller.Offset != newOffset {
+		l.scroller.Offset = newOffset
+		if onScrolled := l.scroller.OnScrolled; onScrolled != nil {
+			onScrolled(newOffset)
+		}
 	}
 }
 
