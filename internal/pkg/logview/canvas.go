@@ -81,6 +81,20 @@ func (c *logCanvas) MouseDown(_ *desktop.MouseEvent) {
 func (c *logCanvas) MouseUp(_ *desktop.MouseEvent) {
 }
 
+func (c *logCanvas) getBoxAtPoint(p fyne.Position) Box {
+	if renderer := c.renderer.Load(); renderer != nil {
+		return renderer.getBoxAtPoint(p)
+	}
+	return nil
+}
+
+func (c *logCanvas) getBoxAtAnchor(a doc.Anchor) Box {
+	if renderer := c.renderer.Load(); renderer != nil {
+		return renderer.getBoxAtAnchor(a)
+	}
+	return nil
+}
+
 var _ fyne.WidgetRenderer = (*logCanvasRenderer)(nil)
 
 type logCanvasRenderer struct {
@@ -331,24 +345,37 @@ func (r *logCanvasRenderer) rewrap() bool {
 }
 
 func (r *logCanvasRenderer) getAnchorAtPoint(p fyne.Position) doc.Anchor {
+	box := r.getBoxAtPoint(p).(*TextBox)
+	if p.Y < box.Position().Y {
+		return box.StartAnchor()
+	}
+	if p.Y >= box.Position().Y+box.Size().Height {
+		return box.EndAnchor()
+	}
+	return box.AnchorAtX(p.X - box.Position().X)
+}
+
+func (r *logCanvasRenderer) getBoxAtPoint(p fyne.Position) Box {
 	r.itemsLock.RLock()
 	defer r.itemsLock.RUnlock()
-	nLines := len(r.wrappedLines)
-	if nLines == 0 {
-		return doc.Anchor{}
+	if len(r.wrappedLines) == 0 {
+		return nil
 	}
-	lastLine := r.wrappedLines[nLines-1]
-	i, _ := alg.BinarySearch(nLines, p.Y, func(i int) float32 {
-		if i == nLines {
-			return lastLine.Position().Y + lastLine.Size().Height
-		}
+	i, _ := alg.BinarySearch(len(r.wrappedLines)-1, p.Y, func(i int) float32 {
 		return r.wrappedLines[i].Position().Y
 	})
-	if i == nLines {
-		return lastLine.EndAnchor()
+	return r.wrappedLines[i]
+}
+
+func (r *logCanvasRenderer) getBoxAtAnchor(anchor doc.Anchor) Box {
+	r.itemsLock.RLock()
+	defer r.itemsLock.RUnlock()
+	if len(r.wrappedLines) == 0 {
+		return nil
 	}
-	if textBox, ok := r.wrappedLines[i].(*TextBox); ok {
-		return textBox.AnchorAtX(p.X - textBox.Position().X)
-	}
-	return r.wrappedLines[i].StartAnchor()
+	anchorIndex := func(a doc.Anchor) uint64 { return uint64(a.LineIndex)<<32 | uint64(a.LineOffset) }
+	i, _ := alg.BinarySearch(len(r.wrappedLines)-1, anchorIndex(anchor), func(i int) uint64 {
+		return anchorIndex(r.wrappedLines[i].StartAnchor())
+	})
+	return r.wrappedLines[i]
 }

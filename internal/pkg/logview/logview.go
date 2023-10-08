@@ -28,12 +28,13 @@ type LogView struct {
 	scroller *container.Scroll
 	canvas   *logCanvas
 
-	textSize     float32
-	textStyle    fyne.TextStyle
-	wrapping     fyne.TextWrap
-	autoScroll   bool
-	document     doc.Document
-	propertyLock sync.RWMutex
+	textSize      float32
+	textStyle     fyne.TextStyle
+	wrapping      fyne.TextWrap
+	autoScroll    bool
+	viewTopOffset float32
+	document      doc.Document
+	propertyLock  sync.RWMutex
 
 	shortcutHandler fyne.ShortcutHandler
 }
@@ -58,7 +59,16 @@ func New() *LogView {
 		func() {
 			l.propertyLock.Lock()
 			defer l.propertyLock.Unlock()
-			l.autoScroll = l.scroller.Offset.Y+l.scroller.Size().Height >= l.scroller.Content.Size().Height
+			l.autoScroll = l.scroller.Offset.Y+l.scroller.Size().Height >= l.canvas.Size().Height
+			if l.autoScroll {
+				l.document.RemoveBookmark(bookmarkViewTop)
+			} else {
+				topBox := l.canvas.getBoxAtPoint(l.scroller.Offset)
+				if topBox != nil {
+					l.document.SetBookmark(bookmarkViewTop, topBox.StartAnchor())
+					l.viewTopOffset = l.scroller.Offset.Y - topBox.Position().Y
+				}
+			}
 		}()
 
 		l.canvas.Refresh()
@@ -108,6 +118,11 @@ func (l *LogView) CreateRenderer() fyne.WidgetRenderer {
 
 		if autoScroll {
 			l.scroller.ScrollToBottom()
+		} else if a, ok := l.document.GetBookmark(bookmarkViewTop); ok {
+			if box := l.canvas.getBoxAtAnchor(a); box != nil {
+				l.scrollToOffset(fyne.NewPos(l.scroller.Offset.X, box.Position().Y+l.viewTopOffset))
+				l.scroller.Refresh()
+			}
 		}
 	}
 	return r
@@ -222,12 +237,16 @@ func (l *LogView) showContextMenu(absolutePos fyne.Position) {
 }
 
 func (l *LogView) scrollPointToVisible(p fyne.Position) {
-	startOffset, viewSize, canvasSize := l.scroller.Offset, l.scroller.Size(), l.canvas.MinSize()
+	startOffset, viewSize, canvasSize := l.scroller.Offset, l.scroller.Size(), l.canvas.Size()
 	var newOffset fyne.Position
 	newOffset.X = alg.Clamp(startOffset.X, p.X-viewSize.Width, p.X)
 	newOffset.X = alg.Clamp(newOffset.X, 0, max(0, canvasSize.Width-viewSize.Width))
 	newOffset.Y = alg.Clamp(startOffset.Y, p.Y-viewSize.Height, p.Y)
 	newOffset.Y = alg.Clamp(newOffset.Y, 0, max(0, canvasSize.Height-viewSize.Height))
+	l.scrollToOffset(newOffset)
+}
+
+func (l *LogView) scrollToOffset(newOffset fyne.Position) {
 	if l.scroller.Offset != newOffset {
 		l.scroller.Offset = newOffset
 		if onScrolled := l.scroller.OnScrolled; onScrolled != nil {
@@ -241,4 +260,5 @@ type bookmark int
 const (
 	bookmarkSelectionStart = bookmark(iota)
 	bookmarkSelectionEnd
+	bookmarkViewTop
 )
