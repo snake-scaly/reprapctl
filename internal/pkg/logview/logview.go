@@ -59,7 +59,7 @@ func New() *LogView {
 		func() {
 			l.propertyLock.Lock()
 			defer l.propertyLock.Unlock()
-			l.autoScroll = l.scroller.Offset.Y+l.scroller.Size().Height >= l.canvas.Size().Height
+			l.autoScroll = l.scroller.Offset.Y+l.scroller.Size().Height >= l.canvas.MinSize().Height
 			if l.autoScroll {
 				l.document.RemoveBookmark(bookmarkViewTop)
 			} else {
