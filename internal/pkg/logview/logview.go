@@ -55,18 +55,25 @@ func New() *LogView {
 
 	l.canvas = newLogCanvas(&l)
 	l.scroller = container.NewScroll(l.canvas)
+
 	l.scroller.OnScrolled = func(_ fyne.Position) {
+		scrollerOffset := l.scroller.Offset
+		scrollerSize := l.scroller.Size()
+		canvasMinSize := l.canvas.MinSize()
+		topBox := l.canvas.getBoxAtPoint(scrollerOffset)
+
 		func() {
 			l.propertyLock.Lock()
 			defer l.propertyLock.Unlock()
-			l.autoScroll = l.scroller.Offset.Y+l.scroller.Size().Height >= l.canvas.MinSize().Height
+
+			l.autoScroll = scrollerOffset.Y+scrollerSize.Height >= canvasMinSize.Height
+
 			if l.autoScroll {
 				l.document.RemoveBookmark(bookmarkViewTop)
 			} else {
-				topBox := l.canvas.getBoxAtPoint(l.scroller.Offset)
 				if topBox != nil {
 					l.document.SetBookmark(bookmarkViewTop, topBox.StartAnchor())
-					l.viewTopOffset = l.scroller.Offset.Y - topBox.Position().Y
+					l.viewTopOffset = scrollerOffset.Y - topBox.Position().Y
 				}
 			}
 		}()

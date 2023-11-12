@@ -148,11 +148,10 @@ func (r *logCanvasRenderer) Layout(_ fyne.Size) {
 
 func (r *logCanvasRenderer) MinSize() fyne.Size {
 	innerPadding := theme.InnerPadding()
+	minSize := fyne.Size{Width: innerPadding * 2, Height: innerPadding * 2}
 
 	r.itemsLock.RLock()
 	defer r.itemsLock.RUnlock()
-
-	minSize := fyne.Size{Width: innerPadding * 2, Height: innerPadding * 2}
 
 	for _, item := range r.visibleItems {
 		minSize.Width = max(minSize.Width, item.Position().X+item.MinSize().Width+innerPadding)
@@ -171,21 +170,29 @@ func (r *logCanvasRenderer) Objects() []fyne.CanvasObject {
 }
 
 func (r *logCanvasRenderer) Refresh() {
+	scrollOffset, scrollSize := r.logView.scroller.Offset, r.logView.scroller.Size()
+
+	context := wrapContext{
+		documentVersion: r.logView.document.Version(),
+		width:           scrollSize.Width - theme.InnerPadding()*2,
+		wrap:            r.logView.Wrapping(),
+		textSize:        r.logView.TextSize(),
+		textStyle:       r.logView.TextStyle(),
+	}
+
 	r.itemsLock.Lock()
 	defer r.itemsLock.Unlock()
 
 	r.refreshId++
 
-	dirty := r.rewrap()
-	r.renderItems(dirty)
+	dirty := r.rewrap(context)
+	r.renderItems(scrollOffset.Y, scrollSize.Height, dirty)
 	r.renderSelection()
 	r.cacheObjects()
 }
 
 // renderItems assumes a write lock on r.itemsLock.
-func (r *logCanvasRenderer) renderItems(dirty bool) {
-	scrollY, scrollH := r.logView.scroller.Offset.Y, r.logView.scroller.Size().Height
-
+func (r *logCanvasRenderer) renderItems(scrollY, scrollH float32, dirty bool) {
 	isLineVisible := func(box Box) bool {
 		return box.Position().Y+box.Size().Height > scrollY && scrollY+scrollH > box.Position().Y
 	}
@@ -287,28 +294,9 @@ func (r *logCanvasRenderer) cacheObjects() {
 	r.objects.Store(objects)
 }
 
-func (r *logCanvasRenderer) itemHeight() float32 {
-	h := fyne.MeasureText("", r.logView.TextSize(), r.logView.TextStyle()).Height
-	return float32(int(h))
-}
-
-func (r *logCanvasRenderer) rewrap() bool {
-	padding := theme.InnerPadding()
-	width := r.logView.scroller.Size().Width - padding*2
-	if width <= 0 {
-		return false
-	}
-
-	context := wrapContext{
-		documentVersion: r.logView.document.Version(),
-		width:           width,
-		wrap:            r.logView.Wrapping(),
-		textSize:        r.logView.TextSize(),
-		textStyle:       r.logView.TextStyle(),
-	}
-
+func (r *logCanvasRenderer) rewrap(context wrapContext) bool {
 	// no need to rewrap if context didn't change
-	if context == r.wrapContext {
+	if context.width <= 0 || context == r.wrapContext {
 		return false
 	}
 	r.wrapContext = context
@@ -320,6 +308,7 @@ func (r *logCanvasRenderer) rewrap() bool {
 	})
 
 	lineSpacing := theme.LineSpacing()
+	padding := theme.InnerPadding()
 	pos := fyne.Position{X: padding, Y: padding}
 	r.wrappedLines = make([]Box, 0, len(lines))
 
